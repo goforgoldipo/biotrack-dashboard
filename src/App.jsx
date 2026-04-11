@@ -206,13 +206,12 @@ const aggDays = (days) => {
 };
 
 const getCols = (view, live, history) => {
-  // If we have real API history, blend it in; otherwise use DEMO
-  const base = history && history.length > 1
-    ? history                             // real synced days from API
-    : DEMO;                               // demo fallback
+  // If we have real API history, use it for available days then pad with DEMO
+  const realDays = (history && history.length > 0) ? history.map(h=>({...h, isDemo:false})) : [];
+  const padded = [...realDays, ...DEMO.slice(realDays.length)];
   const all = live
-    ? [{ ...base[0], ...live, isDemo:false }, ...base.slice(1)]
-    : base;
+    ? [{ ...padded[0], ...live, isDemo:false }, ...padded.slice(1)]
+    : padded;
   if(view==="daily") return Array.from({length:30},(_,i)=>({
     label: i===0?(live?"TODAY ◉ LIVE":"TODAY"):all[i]?.dow+" "+all[i]?.date,
     data: all[i] || all[0], live: i===0&&!!live, dayIndex: i, allDays: all,
@@ -438,21 +437,26 @@ function HumeBodyMap({ data, onUpdate }) {
 
 
 const mapImport = (p) => {
+  // Derive dow/date from syncDate or _receivedAt for column labels
+  const refDate = p.syncDate ? new Date(p.syncDate+", "+new Date().getFullYear()) : (p._receivedAt ? new Date(p._receivedAt) : new Date());
   const m = {
     syncDate: p.syncDate||new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}),
     syncTime: p.syncTime||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),
-    steps: p.steps||p.stepCount, calsBurned: p.activeCalories||p.calsBurned,
+    dow: p.dow||["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][refDate.getDay()],
+    date: p.date||refDate.toLocaleDateString("en-US",{month:"short",day:"numeric"}),
+    steps: p.steps||p.stepCount, calsBurned: p.activeCalories||p.calsBurned||p.totalCaloriesBurned,
     restingHR: p.restingHR||p.restingHeartRate, avgHR: p.avgHR||p.averageHeartRate,
     vo2max: p.vo2max||p.vo2Max, standHours: p.standHours,
     weight: p.weight||p.bodyWeight, bodyFat: p.bodyFat||p.bodyFatPercentage,
     leanMass: p.leanMass||p.leanBodyMass, bmi: p.bmi, visceralFat: p.visceralFat,
-    bmr: p.bmr||p.basalMetabolicRate, metabolicAge: p.metabolicAge||p.metabolic_age,
+    bmr: p.bmr||p.basalMetabolicRate||p.basalCalories, metabolicAge: p.metabolicAge||p.metabolic_age,
     calories: p.calories||p.dietaryCalories, protein: p.protein,
     carbs: p.carbs||p.carbohydrates, fat: p.fat, fiber: p.fiber, water: p.water,
     sleepDur: p.sleepDur||p.sleepDuration, deepSleep: p.deepSleep, remSleep: p.remSleep,
+    lightSleep: p.lightSleep, spo2: p.spo2,
     sleepScore: p.sleepScore, hrv: p.hrv, readiness: p.readiness,
     workoutType: p.workoutType, workoutDur: p.workoutDur||p.workoutDuration,
-    workoutVol: p.workoutVol, exercises: p.exercises,
+    workoutVol: p.workoutVol||p.workoutCalories, exercises: p.exercises,
     // Hume segmental — accept multiple naming conventions
     trunkFat:    p.trunkFat    || p.trunk_fat    || p.torsoFat  || p.torso_fat,
     rightArmFat: p.rightArmFat || p.right_arm_fat|| p.rightArm,
@@ -465,6 +469,10 @@ const mapImport = (p) => {
     rightLegMuscle: p.rightLegMuscle || p.right_leg_muscle,
     leftLegMuscle:  p.leftLegMuscle  || p.left_leg_muscle,
   };
+  // Compute leanMass from weight and bodyFat if not provided
+  if(!m.leanMass && m.weight && m.bodyFat) m.leanMass = +(m.weight * (1 - m.bodyFat/100)).toFixed(1);
+  // Compute activeMins from workoutDur if not provided
+  if(!m.activeMins && m.workoutDur) m.activeMins = Math.round(m.workoutDur);
   Object.keys(m).forEach(k=>{ if(m[k]===null||m[k]===undefined) delete m[k]; });
   return m;
 };
