@@ -973,7 +973,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
 
                       return (
                         <tr key={row.k} style={{background:row.hi?"#0e0e1e":C.bg,borderBottom:`1px solid ${C.surf2}`}}>
-                          <td style={{padding:"8px 16px 8px 32px",textAlign:"left",color:row.hi?C.text1:C.text2,fontSize:"12px",position:"sticky",left:0,background:row.hi?"#0e0e1e":C.bg,zIndex:1,whiteSpace:"nowrap",fontWeight:row.hi?"600":"normal"}}>
+                          <td style={{padding:"8px 16px 8px 32px",textAlign:"left",color:C.text1,fontSize:"12px",position:"sticky",left:0,background:row.hi?"#0e0e1e":C.bg,zIndex:1,whiteSpace:"nowrap",fontWeight:row.hi?"600":"normal"}}>
                             {row.l}{row.u&&<span style={{color:C.text3,marginLeft:"4px",fontWeight:"normal"}}>{row.u}</span>}
                           </td>
                           {vals.map((v,ci)=>{
