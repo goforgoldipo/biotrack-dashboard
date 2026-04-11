@@ -73,7 +73,7 @@ const genDay = (offset) => {
     leftLegMuscle:  +(27.6 + offset*0.009 + rng(s+39,-0.2,0.2)).toFixed(1),
   };
 };
-const DEMO = Array.from({ length: 90 }, (_, i) => genDay(i));
+const DEMO = Array.from({ length: 3650 }, (_, i) => genDay(i));
 
 // ─── SCHEMA ───────────────────────────────────────────────────────────────────
 const GROUPS = [
@@ -213,13 +213,13 @@ const getCols = (view, live, history) => {
   const all = live
     ? [{ ...base[0], ...live, isDemo:false }, ...base.slice(1)]
     : base;
-  if(view==="daily") return Array.from({length:7},(_,i)=>({
+  if(view==="daily") return Array.from({length:30},(_,i)=>({
     label: i===0?(live?"TODAY ◉ LIVE":"TODAY"):all[i]?.dow+" "+all[i]?.date,
     data: all[i] || all[0], live: i===0&&!!live, dayIndex: i, allDays: all,
   }));
-  if(view==="weekly") return Array.from({length:4},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))}));
-  if(view==="monthly") return Array.from({length:3},(_,m)=>({label:m===0?"THIS MONTH":`${m}MO AGO`,data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))}));
-  return [{label:"30D AVG",data:aggDays(all.slice(0,30).filter(Boolean))},{label:"60D AVG",data:aggDays(all.slice(0,60).filter(Boolean))},{label:"90D AVG",data:aggDays(all.slice(0,90).filter(Boolean))}];
+  if(view==="weekly") return Array.from({length:30},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))}));
+  if(view==="monthly") return Array.from({length:30},(_,m)=>({label:m===0?"THIS MONTH":`${m}MO AGO`,data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))}));
+  return Array.from({length:10},(_,y)=>({label:y===0?"THIS YEAR":`${y}Y AGO`,data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
 };
 
 // Find the previous day with the same workout type, starting after startIdx
