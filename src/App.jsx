@@ -221,6 +221,23 @@ const PHASES = [
 ];
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Fields to SUM (totals are more useful for coaching — "you did X this week")
+const SUM_KEYS = new Set([
+  "steps","activeCalories","basalCalories","totalCaloriesBurned","calsBurned",
+  "calories","protein","carbs","fat","fiber","water","sodium","sugar",
+  "cholesterol","saturatedFat","potassium","calcium","iron","vitaminC",
+  "flightsClimbed","activeMins",
+  "workoutVol","fitbodSets","fitbodWorkingSets","fitbodWarmupSets","fitbodTotalReps","fitbodExerciseCount",
+  "volChest","volBack","volShoulders","volBiceps","volTriceps","volLegs","volCore",
+  "repsChest","repsBack","repsShoulders","repsBiceps","repsTriceps","repsLegs","repsCore",
+  "setsChest","setsBack","setsShoulders","setsBiceps","setsTriceps","setsLegs","setsCore",
+]);
+// Fields to MAX (peak performance matters more than average)
+const MAX_KEYS = new Set([
+  "fitbodMaxWeightLbs","maxChest","maxBack","maxShoulders","maxBiceps","maxTriceps","maxLegs","maxCore",
+]);
+// Everything else: AVERAGE (body metrics, sleep quality, heart data)
+
 const aggDays = (days) => {
   if(!days||!days.length) return {};
   const allKeys = new Set();
@@ -228,7 +245,14 @@ const aggDays = (days) => {
   const out = { ...days[0] };
   allKeys.forEach(k => {
     const nums = days.map(d=>d[k]).filter(v=>typeof v==="number"&&!isNaN(v));
-    if(nums.length>0) out[k] = +(nums.reduce((s,v)=>s+v,0)/nums.length).toFixed(1);
+    if(nums.length===0) return;
+    if(SUM_KEYS.has(k)) {
+      out[k] = +(nums.reduce((s,v)=>s+v,0)).toFixed(1);
+    } else if(MAX_KEYS.has(k)) {
+      out[k] = +Math.max(...nums).toFixed(1);
+    } else {
+      out[k] = +(nums.reduce((s,v)=>s+v,0)/nums.length).toFixed(1);
+    }
   });
   return out;
 };
