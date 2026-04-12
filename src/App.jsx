@@ -111,6 +111,9 @@ const GROUPS = [
   { id:"training", name:"TRAINING", src:"FITBOD", col:"#fbbf24", rows:[
     {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"workoutVol",l:"Volume",u:"lbs"},
     {k:"workoutDur",l:"Duration",u:"min"},{k:"exercises",l:"Exercises",u:""},
+    {k:"trunkFat",l:"Trunk Fat",u:"%"},{k:"rightArmFat",l:"Right Arm Fat",u:"%"},
+    {k:"leftArmFat",l:"Left Arm Fat",u:"%"},{k:"rightLegFat",l:"Right Leg Fat",u:"%"},
+    {k:"leftLegFat",l:"Left Leg Fat",u:"%"},
   ]},
 ];
 
@@ -233,7 +236,8 @@ const findPrevSameWorkout = (workoutType, startIdx, allDays) => {
 const fmtV = (k,v) => {
   if(v===null||v===undefined) return "—";
   if(typeof v==="string") return v;
-  if(k==="steps"||k==="calsBurned"||k==="workoutVol") return Number(v).toLocaleString();
+  if(k==="steps"||k==="calsBurned"||k==="workoutVol") return Math.round(Number(v)).toLocaleString();
+  if(typeof v==="number") return Number.isInteger(v) ? v : +v.toFixed(1);
   return v;
 };
 
@@ -529,7 +533,7 @@ export default function App() {
       setApiError("");
 
       // Fetch history in background (non-blocking)
-      fetch(`${base}/history?days=90`, { headers })
+      fetch(`${base}/history?days=3650`, { headers })
         .then(h => h.ok ? h.json() : null)
         .then(h => {
           if(h?.snapshots?.length) {
@@ -672,11 +676,12 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
   const TH={padding:"8px 14px",textAlign:"right",fontSize:"10px",color:C.text3,letterSpacing:"1.5px",borderBottom:`1px solid ${C.bord}`,whiteSpace:"nowrap",fontWeight:"600"};
   const TD={padding:"8px 14px",textAlign:"right",borderBottom:`1px solid ${C.surf2}`,whiteSpace:"nowrap",verticalAlign:"middle"};
 
+  const r1=v=>typeof v==="number"&&!Number.isInteger(v)?+v.toFixed(1):v;
   const kpis=[
-    {l:"BODY FAT",v:`${today.bodyFat}%`,c:"#ff6b35"},{l:"WEIGHT",v:`${today.weight} lbs`,c:"#fbbf24"},
-    {l:"LEAN MASS",v:`${today.leanMass} lbs`,c:"#34d399"},{l:"HRV",v:`${today.hrv} ms`,c:"#a78bfa"},
-    {l:"READINESS",v:`${today.readiness}/100`,c:"#00e5ff"},{l:"SLEEP",v:`${today.sleepScore}/100`,c:"#818cf8"},
-    {l:"STEPS",v:Number(today.steps).toLocaleString(),c:"#f43f5e"},{l:"PROTEIN",v:`${today.protein}g`,c:"#34d399"},
+    {l:"BODY FAT",v:`${r1(today.bodyFat)}%`,c:"#ff6b35"},{l:"WEIGHT",v:`${r1(today.weight)} lbs`,c:"#fbbf24"},
+    {l:"LEAN MASS",v:`${r1(today.leanMass)} lbs`,c:"#34d399"},{l:"HRV",v:`${r1(today.hrv)} ms`,c:"#a78bfa"},
+    {l:"READINESS",v:`${r1(today.readiness)}/100`,c:"#00e5ff"},{l:"SLEEP",v:`${r1(today.sleepScore)}/100`,c:"#818cf8"},
+    {l:"STEPS",v:Math.round(Number(today.steps)).toLocaleString(),c:"#f43f5e"},{l:"PROTEIN",v:`${r1(today.protein)}g`,c:"#34d399"},
   ];
 
   const sectionLabel = (txt) => (
