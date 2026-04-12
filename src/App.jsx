@@ -518,8 +518,8 @@ export default function App() {
   const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true});
   const [openPhase,setOpenPhase]=useState(0);
   // API connector state
-  const [apiURL,setApiURL]=useState(()=>localStorage.getItem("bt_api_url")||"");
-  const [apiSecret,setApiSecret]=useState(()=>localStorage.getItem("bt_api_secret")||"");
+  const [apiURL,setApiURL]=useState(()=>localStorage.getItem("bt_api_url")||"https://biotrack-api-production.up.railway.app");
+  const [apiSecret,setApiSecret]=useState(()=>localStorage.getItem("bt_api_secret")||"8da2e9f068632f6b113688c222e09d5fae01c15121ea7afafe3d6931a884ba2a");
   const [apiStatus,setApiStatus]=useState("idle");
   const [apiError,setApiError]=useState("");
   const [showApiSetup,setShowApiSetup]=useState(false);
