@@ -109,12 +109,20 @@ const GROUPS = [
     {k:"standHours",l:"Stand Hours",u:"hrs"},{k:"vo2max",l:"VO2 Max",u:""},
   ]},
   { id:"training", name:"TRAINING", src:"FITBOD", col:"#fbbf24", rows:[
-    {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"workoutVol",l:"Volume",u:"lbs"},
+    {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"workoutVol",l:"Total Volume",u:"lbs",hi:true},
     {k:"workoutDur",l:"Duration",u:"min"},{k:"fitbodSets",l:"Total Sets",u:""},
-    {k:"fitbodWorkingSets",l:"Working Sets",u:""},{k:"fitbodWarmupSets",l:"Warmup Sets",u:""},
-    {k:"fitbodTotalReps",l:"Total Reps",u:""},{k:"fitbodExerciseCount",l:"Exercises",u:""},
-    {k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
+    {k:"fitbodWorkingSets",l:"Working Sets",u:""},{k:"fitbodTotalReps",l:"Total Reps",u:""},
+    {k:"fitbodExerciseCount",l:"Exercises",u:""},{k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
     {k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
+  ]},
+  { id:"volByGroup", name:"VOLUME BY MUSCLE GROUP", src:"FITBOD", col:"#fbbf24", rows:[
+    {k:"volChest",l:"Chest Vol",u:"lbs",hi:true},{k:"repsChest",l:"Chest Reps",u:""},{k:"setsChest",l:"Chest Sets",u:""},{k:"maxChest",l:"Chest Max",u:"lbs"},
+    {k:"volBack",l:"Back Vol",u:"lbs",hi:true},{k:"repsBack",l:"Back Reps",u:""},{k:"setsBack",l:"Back Sets",u:""},{k:"maxBack",l:"Back Max",u:"lbs"},
+    {k:"volShoulders",l:"Shoulders Vol",u:"lbs",hi:true},{k:"repsShoulders",l:"Shoulders Reps",u:""},{k:"setsShoulders",l:"Shoulders Sets",u:""},{k:"maxShoulders",l:"Shoulders Max",u:"lbs"},
+    {k:"volBiceps",l:"Biceps Vol",u:"lbs",hi:true},{k:"repsBiceps",l:"Biceps Reps",u:""},{k:"setsBiceps",l:"Biceps Sets",u:""},{k:"maxBiceps",l:"Biceps Max",u:"lbs"},
+    {k:"volTriceps",l:"Triceps Vol",u:"lbs",hi:true},{k:"repsTriceps",l:"Triceps Reps",u:""},{k:"setsTriceps",l:"Triceps Sets",u:""},{k:"maxTriceps",l:"Triceps Max",u:"lbs"},
+    {k:"volLegs",l:"Legs Vol",u:"lbs",hi:true},{k:"repsLegs",l:"Legs Reps",u:""},{k:"setsLegs",l:"Legs Sets",u:""},{k:"maxLegs",l:"Legs Max",u:"lbs"},
+    {k:"volCore",l:"Core Vol",u:"lbs",hi:true},{k:"repsCore",l:"Core Reps",u:""},{k:"setsCore",l:"Core Sets",u:""},{k:"maxCore",l:"Core Max",u:"lbs"},
     {k:"trunkFat",l:"Trunk Fat",u:"%"},{k:"rightArmFat",l:"Right Arm Fat",u:"%"},
     {k:"leftArmFat",l:"Left Arm Fat",u:"%"},{k:"rightLegFat",l:"Right Leg Fat",u:"%"},
     {k:"leftLegFat",l:"Left Leg Fat",u:"%"},
@@ -254,7 +262,7 @@ const findPrevSameWorkout = (workoutType, startIdx, allDays) => {
 const fmtV = (k,v) => {
   if(v===null||v===undefined) return "—";
   if(typeof v==="string") return v;
-  if(k==="steps"||k==="calsBurned"||k==="workoutVol"||k==="fitbodTotalReps") return Math.round(Number(v)).toLocaleString();
+  if(k==="steps"||k==="calsBurned"||k==="workoutVol"||k==="fitbodTotalReps"||k.startsWith("vol")) return Math.round(Number(v)).toLocaleString();
   if(typeof v==="number") return Number.isInteger(v) ? v : +v.toFixed(1);
   return v;
 };
@@ -491,6 +499,15 @@ const mapImport = (p) => {
     fitbodSets: p.fitbodSets, fitbodWorkingSets: p.fitbodWorkingSets, fitbodWarmupSets: p.fitbodWarmupSets,
     fitbodTotalReps: p.fitbodTotalReps, fitbodExerciseCount: p.fitbodExerciseCount,
     fitbodMaxWeightLbs: p.fitbodMaxWeightLbs, fitbodMuscleGroups: p.fitbodMuscleGroups,
+    // Per-muscle-group volume, reps, sets, max
+    volChest: p.volChest, volBack: p.volBack, volShoulders: p.volShoulders,
+    volBiceps: p.volBiceps, volTriceps: p.volTriceps, volLegs: p.volLegs, volCore: p.volCore,
+    repsChest: p.repsChest, repsBack: p.repsBack, repsShoulders: p.repsShoulders,
+    repsBiceps: p.repsBiceps, repsTriceps: p.repsTriceps, repsLegs: p.repsLegs, repsCore: p.repsCore,
+    setsChest: p.setsChest, setsBack: p.setsBack, setsShoulders: p.setsShoulders,
+    setsBiceps: p.setsBiceps, setsTriceps: p.setsTriceps, setsLegs: p.setsLegs, setsCore: p.setsCore,
+    maxChest: p.maxChest, maxBack: p.maxBack, maxShoulders: p.maxShoulders,
+    maxBiceps: p.maxBiceps, maxTriceps: p.maxTriceps, maxLegs: p.maxLegs, maxCore: p.maxCore,
     // Hume segmental — accept multiple naming conventions
     trunkFat:    p.trunkFat    || p.trunk_fat    || p.torsoFat  || p.torso_fat,
     rightArmFat: p.rightArmFat || p.right_arm_fat|| p.rightArm,
