@@ -700,6 +700,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
               ◉ DEMO · TAP TO CONNECT
             </div>
           )}
+          <button onClick={()=>window.location.reload()} style={{background:"transparent",border:`1px solid ${C.bord2}`,color:C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"1px",borderRadius:"3px",padding:"4px 10px",fontFamily:"'Courier New',monospace"}}>↻</button>
         </div>
         <div style={{display:"flex",gap:"20px",flexWrap:"wrap"}}>
           {kpis.map(k=>(
