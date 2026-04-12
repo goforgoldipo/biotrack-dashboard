@@ -110,7 +110,11 @@ const GROUPS = [
   ]},
   { id:"training", name:"TRAINING", src:"FITBOD", col:"#fbbf24", rows:[
     {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"workoutVol",l:"Volume",u:"lbs"},
-    {k:"workoutDur",l:"Duration",u:"min"},{k:"exercises",l:"Exercises",u:""},
+    {k:"workoutDur",l:"Duration",u:"min"},{k:"fitbodSets",l:"Total Sets",u:""},
+    {k:"fitbodWorkingSets",l:"Working Sets",u:""},{k:"fitbodWarmupSets",l:"Warmup Sets",u:""},
+    {k:"fitbodTotalReps",l:"Total Reps",u:""},{k:"fitbodExerciseCount",l:"Exercises",u:""},
+    {k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
+    {k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
     {k:"trunkFat",l:"Trunk Fat",u:"%"},{k:"rightArmFat",l:"Right Arm Fat",u:"%"},
     {k:"leftArmFat",l:"Left Arm Fat",u:"%"},{k:"rightLegFat",l:"Right Leg Fat",u:"%"},
     {k:"leftLegFat",l:"Left Leg Fat",u:"%"},
@@ -250,7 +254,7 @@ const findPrevSameWorkout = (workoutType, startIdx, allDays) => {
 const fmtV = (k,v) => {
   if(v===null||v===undefined) return "—";
   if(typeof v==="string") return v;
-  if(k==="steps"||k==="calsBurned"||k==="workoutVol") return Math.round(Number(v)).toLocaleString();
+  if(k==="steps"||k==="calsBurned"||k==="workoutVol"||k==="fitbodTotalReps") return Math.round(Number(v)).toLocaleString();
   if(typeof v==="number") return Number.isInteger(v) ? v : +v.toFixed(1);
   return v;
 };
@@ -483,7 +487,10 @@ const mapImport = (p) => {
     lightSleep: p.lightSleep, spo2: p.spo2,
     sleepScore: p.sleepScore, hrv: p.hrv, readiness: p.readiness,
     workoutType: p.workoutType, workoutDur: p.workoutDur||p.workoutDuration,
-    workoutVol: p.workoutVol||p.workoutCalories, exercises: p.exercises,
+    workoutVol: p.workoutVol||p.workoutCalories, exercises: p.exercises||p.fitbodExercises,
+    fitbodSets: p.fitbodSets, fitbodWorkingSets: p.fitbodWorkingSets, fitbodWarmupSets: p.fitbodWarmupSets,
+    fitbodTotalReps: p.fitbodTotalReps, fitbodExerciseCount: p.fitbodExerciseCount,
+    fitbodMaxWeightLbs: p.fitbodMaxWeightLbs, fitbodMuscleGroups: p.fitbodMuscleGroups,
     // Hume segmental — accept multiple naming conventions
     trunkFat:    p.trunkFat    || p.trunk_fat    || p.torsoFat  || p.torso_fat,
     rightArmFat: p.rightArmFat || p.right_arm_fat|| p.rightArm,
