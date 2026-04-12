@@ -467,14 +467,14 @@ function HumeBodyMap({ data, onUpdate }) {
 
 
 const mapImport = (p) => {
-  // Derive dow/date — prefer _receivedAt (ISO with year) over syncDate (no year)
+  // Derive dow/date — prefer syncDate (actual data date) over _receivedAt (import time)
   let refDate;
-  if (p._receivedAt) {
-    refDate = new Date(p._receivedAt);
-  } else if (p.syncDate) {
+  if (p.syncDate) {
     const parsed = new Date(p.syncDate + ", " + new Date().getFullYear());
-    if (parsed > new Date()) parsed.setFullYear(parsed.getFullYear() - 1);
+    if (parsed > new Date(Date.now() + 86400000)) parsed.setFullYear(parsed.getFullYear() - 1);
     refDate = parsed;
+  } else if (p._receivedAt) {
+    refDate = new Date(p._receivedAt);
   } else {
     refDate = new Date();
   }
