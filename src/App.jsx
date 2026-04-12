@@ -213,9 +213,13 @@ const PHASES = [
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const aggDays = (days) => {
+  if(!days||!days.length) return {};
+  const allKeys = new Set();
+  days.forEach(d=>Object.keys(d).forEach(k=>allKeys.add(k)));
   const out = { ...days[0] };
-  Object.keys(days[0]).forEach(k => {
-    if (typeof days[0][k]==="number") out[k] = +(days.reduce((s,d)=>s+d[k],0)/days.length).toFixed(1);
+  allKeys.forEach(k => {
+    const nums = days.map(d=>d[k]).filter(v=>typeof v==="number"&&!isNaN(v));
+    if(nums.length>0) out[k] = +(nums.reduce((s,v)=>s+v,0)/nums.length).toFixed(1);
   });
   return out;
 };
@@ -260,7 +264,7 @@ const findPrevSameWorkout = (workoutType, startIdx, allDays) => {
 };
 
 const fmtV = (k,v) => {
-  if(v===null||v===undefined) return "—";
+  if(v===null||v===undefined||Number.isNaN(v)) return "—";
   if(typeof v==="string") return v;
   if(k==="steps"||k==="calsBurned"||k==="workoutVol"||k==="fitbodTotalReps"||k.startsWith("vol")) return Math.round(Number(v)).toLocaleString();
   if(typeof v==="number") return Number.isInteger(v) ? v : +v.toFixed(1);
@@ -723,7 +727,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
   const TH={padding:"8px 14px",textAlign:"right",fontSize:"11px",color:C.text1,letterSpacing:"1.5px",borderBottom:`1px solid ${C.bord}`,whiteSpace:"nowrap",fontWeight:"600",opacity:0.8};
   const TD={padding:"8px 14px",textAlign:"right",borderBottom:`1px solid ${C.surf2}`,whiteSpace:"nowrap",verticalAlign:"middle"};
 
-  const r1=v=>(v==null||v===undefined)?"—":typeof v==="number"&&!Number.isInteger(v)?+v.toFixed(1):v;
+  const r1=v=>(v==null||v===undefined||Number.isNaN(v))?"—":typeof v==="number"&&!Number.isInteger(v)?+v.toFixed(1):v;
   const kv=(v,suffix)=>{ const f=r1(v); return f==="—"?"—":`${f}${suffix}`; };
   const kpis=[
     {l:"BODY FAT",v:kv(today.bodyFat,"%"),c:"#ff6b35"},{l:"WEIGHT",v:kv(today.weight," lbs"),c:"#fbbf24"},
