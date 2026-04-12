@@ -587,7 +587,21 @@ export default function App() {
   const [photos,setPhotos]=useState([]);
   const [photoLabels,setPhotoLabels]=useState([]);
   const [photoAnalysis,setPhotoAnalysis]=useState("");
-  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true});
+  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true,volByGroup:true});
+  const [groupOrder,setGroupOrder]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_group_order")) || GROUPS.map(g=>g.id); }
+    catch { return GROUPS.map(g=>g.id); }
+  });
+  const moveGroup=(id,dir)=>{
+    setGroupOrder(prev=>{
+      const i=prev.indexOf(id); if(i<0) return prev;
+      const ni=i+dir; if(ni<0||ni>=prev.length) return prev;
+      const next=[...prev]; [next[i],next[ni]]=[next[ni],next[i]];
+      localStorage.setItem("bt_group_order",JSON.stringify(next));
+      return next;
+    });
+  };
+  const sortedGroups=groupOrder.map(id=>GROUPS.find(g=>g.id===id)).filter(Boolean);
   const [openPhase,setOpenPhase]=useState(0);
   // API connector state
   const [apiURL,setApiURL]=useState(()=>localStorage.getItem("bt_api_url")||"https://biotrack-api-production.up.railway.app");
@@ -1030,14 +1044,19 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
                 </tr>
               </thead>
               <tbody>
-                {GROUPS.map(g=>(
+                {sortedGroups.map((g,gi)=>(
                   <Fragment key={g.id}>
                     <tr><td colSpan={cols.length+2} style={{padding:0}}>
-                      <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))}
-                        style={{padding:"8px 16px",background:"#0c0c1a",display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",borderTop:`1px solid ${C.bord}`,borderBottom:`1px solid ${C.bord}`}}>
-                        <span style={{color:g.col,fontSize:"11px"}}>{expanded[g.id]?"▾":"▸"}</span>
-                        <span style={{color:g.col,fontSize:"11px",letterSpacing:"3px",fontWeight:"bold"}}>{g.name}</span>
-                        <span style={{fontSize:"9px",background:g.col+"22",color:g.col,padding:"2px 10px",borderRadius:"3px",letterSpacing:"1.5px",fontWeight:"600"}}>{g.src}</span>
+                      <div style={{padding:"8px 16px",background:"#0c0c1a",display:"flex",alignItems:"center",gap:"8px",borderTop:`1px solid ${C.bord}`,borderBottom:`1px solid ${C.bord}`}}>
+                        <div style={{display:"flex",flexDirection:"column",gap:"1px",marginRight:"4px"}}>
+                          <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,-1)}} style={{background:"none",border:"none",color:gi===0?C.dim:C.text3,cursor:gi===0?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▲</button>
+                          <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,1)}} style={{background:"none",border:"none",color:gi===sortedGroups.length-1?C.dim:C.text3,cursor:gi===sortedGroups.length-1?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▼</button>
+                        </div>
+                        <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))} style={{display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",flex:1}}>
+                          <span style={{color:g.col,fontSize:"11px"}}>{expanded[g.id]?"▾":"▸"}</span>
+                          <span style={{color:g.col,fontSize:"11px",letterSpacing:"3px",fontWeight:"bold"}}>{g.name}</span>
+                          <span style={{fontSize:"9px",background:g.col+"22",color:g.col,padding:"2px 10px",borderRadius:"3px",letterSpacing:"1.5px",fontWeight:"600"}}>{g.src}</span>
+                        </div>
                       </div>
                     </td></tr>
                     {expanded[g.id] && g.rows.map(row=>{
