@@ -1021,11 +1021,11 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
 
           {/* Table */}
           <div style={{overflowX:"auto"}}>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}>
+            <table style={{borderCollapse:"collapse",fontSize:"13px",tableLayout:"fixed"}}>
               <thead>
                 <tr style={{background:"#07070e"}}>
                   <th style={{...TH,textAlign:"left",minWidth:"130px",position:"sticky",left:0,background:"#07070e",zIndex:1,color:C.text1}}>METRIC</th>
-                  {cols.map(c=><th key={c.label} style={{...TH,color:c.live?"#00ff9d":c.label==="TODAY"?C.text1:C.text3,minWidth:"70px",fontSize:c.label==="TODAY"?"11px":"10px"}}>{c.label}</th>)}
+                  {cols.map(c=><th key={c.label} style={{...TH,color:c.live?"#00ff9d":c.label==="TODAY"?C.text1:C.text3,width:"80px",minWidth:"70px",maxWidth:"90px",fontSize:c.label==="TODAY"?"11px":"9px",overflow:"hidden",textOverflow:"ellipsis"}}>{c.label}</th>)}
                   <th style={{...TH,textAlign:"center"}}>TREND</th>
                 </tr>
               </thead>
