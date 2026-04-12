@@ -208,20 +208,34 @@ const aggDays = (days) => {
   return out;
 };
 
+const EMPTY_DAY = {};  // empty object — fmtV renders all values as "—"
 const getCols = (view, live, history) => {
-  // If we have real API history, use it for available days then pad with DEMO
-  const realDays = (history && history.length > 0) ? history.map(h=>({...h, isDemo:false})) : [];
-  const padded = [...realDays, ...DEMO.slice(realDays.length)];
-  const all = live
-    ? [{ ...padded[0], ...live, isDemo:false }, ...padded.slice(1)]
-    : padded;
-  if(view==="daily") return Array.from({length:30},(_,i)=>({
-    label: i===0?(live?"TODAY ◉ LIVE":"TODAY"):all[i]?.dow+" "+all[i]?.date,
-    data: all[i] || all[0], live: i===0&&!!live, dayIndex: i, allDays: all,
-  }));
-  if(view==="weekly") return Array.from({length:30},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))}));
-  if(view==="monthly") return Array.from({length:30},(_,m)=>({label:m===0?"THIS MONTH":`${m}MO AGO`,data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))}));
-  return Array.from({length:10},(_,y)=>({label:y===0?"THIS YEAR":`${y}Y AGO`,data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
+  const hasReal = live || (history && history.length > 0);
+  if(!hasReal) {
+    // No real data — use full DEMO
+    const all = DEMO;
+    if(view==="daily") return Array.from({length:30},(_,i)=>({
+      label: i===0?"TODAY":all[i]?.dow+" "+all[i]?.date,
+      data: all[i]||all[0], live:false, dayIndex:i, allDays:all,
+    }));
+    if(view==="weekly") return Array.from({length:30},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))}));
+    if(view==="monthly") return Array.from({length:30},(_,m)=>({label:m===0?"THIS MONTH":`${m}MO AGO`,data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))}));
+    return Array.from({length:10},(_,y)=>({label:y===0?"THIS YEAR":`${y}Y AGO`,data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
+  }
+  // Real data mode — only show actual synced data, no demo padding
+  const realDays = (history||[]).map(h=>({...h, isDemo:false}));
+  const today = live ? { ...realDays[0], ...live, isDemo:false } : realDays[0] || EMPTY_DAY;
+  const all = [today, ...realDays.slice(1)];
+  if(view==="daily") return Array.from({length:Math.max(all.length,1)},(_,i)=>{
+    const d = all[i]||EMPTY_DAY;
+    return {
+      label: i===0?(live?"TODAY ◉ LIVE":"TODAY"):(d.dow&&d.date?d.dow+" "+d.date:`${i}D AGO`),
+      data: d, live: i===0&&!!live, dayIndex:i, allDays:all,
+    };
+  });
+  if(view==="weekly") { const weeks=Math.max(Math.ceil(all.length/7),1); return Array.from({length:weeks},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
+  if(view==="monthly") { const months=Math.max(Math.ceil(all.length/30),1); return Array.from({length:months},(_,m)=>({label:m===0?"THIS MONTH":`${m}MO AGO`,data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
+  const years=Math.max(Math.ceil(all.length/365),1); return Array.from({length:years},(_,y)=>({label:y===0?"THIS YEAR":`${y}Y AGO`,data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
 };
 
 // Find the previous day with the same workout type, starting after startIdx
@@ -566,7 +580,7 @@ export default function App() {
     fetchFromAPI(url, secret);
   };
 
-  const today = liveData ? { ...DEMO[0], ...liveData } : DEMO[0];
+  const today = liveData ? { ...liveData } : DEMO[0];
 
   const importJSON = () => {
     setJsonError("");
