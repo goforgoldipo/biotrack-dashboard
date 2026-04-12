@@ -687,7 +687,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
   const inp={background:"#0a0a16",border:`1px solid ${C.bord2}`,color:C.text1,padding:"8px 12px",fontSize:"13px",borderRadius:"4px",outline:"none"};
   const bFill=(col)=>({padding:"9px 20px",background:col,border:"none",color:"#000",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",borderRadius:"3px",fontWeight:"bold"});
   const bOut=(col)=>({padding:"9px 14px",background:"transparent",border:`1px solid ${col}`,color:col,cursor:"pointer",fontSize:"11px",letterSpacing:"1px",borderRadius:"3px"});
-  const TH={padding:"8px 14px",textAlign:"right",fontSize:"10px",color:C.text3,letterSpacing:"1.5px",borderBottom:`1px solid ${C.bord}`,whiteSpace:"nowrap",fontWeight:"600"};
+  const TH={padding:"8px 14px",textAlign:"right",fontSize:"11px",color:C.text1,letterSpacing:"1.5px",borderBottom:`1px solid ${C.bord}`,whiteSpace:"nowrap",fontWeight:"600",opacity:0.8};
   const TD={padding:"8px 14px",textAlign:"right",borderBottom:`1px solid ${C.surf2}`,whiteSpace:"nowrap",verticalAlign:"middle"};
 
   const r1=v=>(v==null||v===undefined)?"—":typeof v==="number"&&!Number.isInteger(v)?+v.toFixed(1):v;
@@ -725,8 +725,8 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
         <div style={{display:"flex",gap:"20px",flexWrap:"wrap"}}>
           {kpis.map(k=>(
             <div key={k.l} style={{textAlign:"center"}}>
-              <div style={{fontSize:"15px",fontWeight:"bold",color:k.c}}>{k.v}</div>
-              <div style={{fontSize:"9px",color:C.text3,letterSpacing:"1px"}}>{k.l}</div>
+              <div style={{fontSize:"17px",fontWeight:"bold",color:k.c}}>{k.v}</div>
+              <div style={{fontSize:"10px",color:C.text1,letterSpacing:"1px",opacity:0.7}}>{k.l}</div>
             </div>
           ))}
         </div>
@@ -952,7 +952,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"13px"}}>
               <thead>
                 <tr style={{background:"#07070e"}}>
-                  <th style={{...TH,textAlign:"left",minWidth:"160px",position:"sticky",left:0,background:"#07070e",zIndex:1,color:C.text3}}>METRIC</th>
+                  <th style={{...TH,textAlign:"left",minWidth:"160px",position:"sticky",left:0,background:"#07070e",zIndex:1,color:C.text1}}>METRIC</th>
                   {cols.map(c=><th key={c.label} style={{...TH,color:c.live?"#00ff9d":c.label==="TODAY"?C.text1:C.text3,minWidth:"110px",fontSize:c.label==="TODAY"?"11px":"10px"}}>{c.label}</th>)}
                   <th style={{...TH,textAlign:"center"}}>TREND</th>
                 </tr>
@@ -1002,8 +1002,8 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
 
                       return (
                         <tr key={row.k} style={{background:row.hi?"#0e0e1e":C.bg,borderBottom:`1px solid ${C.surf2}`}}>
-                          <td style={{padding:"8px 16px 8px 32px",textAlign:"left",color:C.text1,fontSize:"12px",position:"sticky",left:0,background:row.hi?"#0e0e1e":C.bg,zIndex:1,whiteSpace:"nowrap",fontWeight:row.hi?"600":"normal"}}>
-                            {row.l}{row.u&&<span style={{color:C.text3,marginLeft:"4px",fontWeight:"normal"}}>{row.u}</span>}
+                          <td style={{padding:"8px 16px 8px 32px",textAlign:"left",color:C.text1,fontSize:"14px",position:"sticky",left:0,background:row.hi?"#0e0e1e":C.bg,zIndex:1,whiteSpace:"nowrap",fontWeight:row.hi?"600":"normal"}}>
+                            {row.l}{row.u&&<span style={{color:C.text1,marginLeft:"4px",fontWeight:"normal",opacity:0.7}}>{row.u}</span>}
                           </td>
                           {vals.map((v,ci)=>{
                             // Workout type cell — show vol% and dur% vs last same workout
@@ -1011,7 +1011,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
                               const cmp = workoutComparisons?.[ci];
                               const isRest = v === "Rest" || !v;
                               return (
-                                <td key={ci} style={{...TD,verticalAlign:"middle",color:ci===0?C.text1:C.text3,fontWeight:ci===0?"600":"normal",fontSize:ci===0?"13px":"12px"}}>
+                                <td key={ci} style={{...TD,verticalAlign:"middle",color:ci===0?C.text1:C.text2,fontWeight:ci===0?"600":"normal",fontSize:ci===0?"15px":"14px"}}>
                                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"2px"}}>
                                     <span>{fmtV(row.k,v)}</span>
                                     {!isRest && cmp && (
@@ -1050,7 +1050,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
                             const pctLabel = pct === null ? null
                               : `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
                             return (
-                              <td key={ci} style={{...TD,verticalAlign:"middle",color:ci===0?cellCol(row.k,v):C.text3,fontWeight:ci===0?"bold":"normal",fontSize:ci===0?"13px":"12px"}}>
+                              <td key={ci} style={{...TD,verticalAlign:"middle",color:ci===0?cellCol(row.k,v):C.text2,fontWeight:ci===0?"bold":"normal",fontSize:ci===0?"15px":"14px"}}>
                                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"1px"}}>
                                   <span>
                                     {fmtV(row.k,v)}
