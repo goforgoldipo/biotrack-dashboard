@@ -247,14 +247,30 @@ const getCols = (view, live, history) => {
   const realDays = (history||[]).map(h=>({...h, isDemo:false}));
   const todayData = live ? { ...realDays[0], ...live, isDemo:false } : realDays[0] || EMPTY_DAY;
   const all = [todayData, ...realDays.slice(1)];
+  const thisYear = new Date().getFullYear();
+  const dayLabel = (i, d) => {
+    if(i===0) return live?"TODAY ◉ LIVE":"TODAY";
+    if(!d.dow||!d.date) return `${i}D AGO`;
+    // Check if date is from a prior year
+    const parsed = new Date(d.date+", "+thisYear);
+    if(parsed > new Date(Date.now()+86400000)) parsed.setFullYear(thisYear-1);
+    const yr = parsed.getFullYear();
+    return yr < thisYear ? `${d.dow} ${d.date} ${yr}` : `${d.dow} ${d.date}`;
+  };
+  const weekLabel = (w) => {
+    if(w===0) return "THIS WEEK";
+    const weekStart = new Date(Date.now()-w*7*86400000);
+    const yr = weekStart.getFullYear();
+    return yr < thisYear ? `${w}W AGO '${String(yr).slice(2)}` : `${w}W AGO`;
+  };
   if(view==="daily") return Array.from({length:Math.max(all.length,1)},(_,i)=>{
     const d = all[i]||EMPTY_DAY;
     return {
-      label: i===0?(live?"TODAY ◉ LIVE":"TODAY"):(d.dow&&d.date?d.dow+" "+d.date:`${i}D AGO`),
+      label: dayLabel(i, d),
       data: d, live: i===0&&!!live, dayIndex:i, allDays:all,
     };
   });
-  if(view==="weekly") { const weeks=Math.max(Math.ceil(all.length/7),1); return Array.from({length:weeks},(_,w)=>({label:w===0?"THIS WEEK":`${w}W AGO`,data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
+  if(view==="weekly") { const weeks=Math.max(Math.ceil(all.length/7),1); return Array.from({length:weeks},(_,w)=>({label:weekLabel(w),data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
   if(view==="monthly") { const months=Math.max(Math.ceil(all.length/30),1); return Array.from({length:months},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
   const years=Math.max(Math.ceil(all.length/365),1); return Array.from({length:years},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
 };
