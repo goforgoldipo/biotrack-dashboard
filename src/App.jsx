@@ -747,19 +747,30 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.choices[0].message.content;
   };
 
-  const analyze = async (llmId) => {
+  const COACH_QUESTIONS = [
+    {id:"analyze",label:"📊 ANALYZE MY DATA",prompt:"Analyze my current health data. Give 5 specific, data-driven recommendations to reduce body fat while preserving lean muscle. Reference actual numbers from my data. Prioritize highest-impact actions."},
+    {id:"workout7",label:"💪 7-DAY WORKOUT PLAN",prompt:"Design my exact workout plan for the next 7 days based on my training history, recovery data, and body composition. Include exercises, sets×reps, load recommendations, and rest days. Account for my HRV and sleep quality. I train with Fitbod-style workouts."},
+    {id:"meal7",label:"🥗 7-DAY VEGAN MEAL PLAN",prompt:"Create a detailed 7-day whole food plant-powered vegan meal plan optimized for fat loss while preserving muscle. Include exact meals (breakfast, lunch, dinner, snacks), calories, protein, carbs, fat for each day. Target high protein (180g+), moderate carbs, caloric deficit. Use real whole foods — no processed fake meats."},
+    {id:"fat10",label:"🔥 GET TO 10% BODY FAT",prompt:"I want to get to 10% body fat as fast as safely possible. Based on my current data, give me the exact step-by-step plan: daily calorie target, macro split, cardio prescription, training adjustments, sleep optimization, supplement protocol, and timeline projection. Be aggressive but science-based."},
+    {id:"weekly",label:"📋 WEEKLY REVIEW",prompt:"Give me a comprehensive weekly review. Compare this week's data to last week: weight trend, body fat trend, training volume by muscle group, nutrition compliance, sleep quality, HRV trend. Grade each category A-F. Tell me exactly what to improve next week."},
+    {id:"plateau",label:"⚠️ BREAK MY PLATEAU",prompt:"Analyze if I'm in a fat loss plateau based on my data trends. If yes, prescribe specific interventions: refeed strategy, cardio adjustments, training deload, calorie cycling, or metabolic reset. If no plateau, tell me what's working and what to double down on."},
+  ];
+
+  const analyze = async (llmId, questionId) => {
     const l=LLMS.find(x=>x.id===llmId);
     if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
-    setLoading(p=>({...p,[llmId]:true}));
-    const sys="You are an elite body recomposition coach. Analyze health data and give 5 specific, data-driven recommendations to reduce body fat. Reference actual numbers. Use clear headers. Prioritize highest-impact actions.";
+    const qKey = `${llmId}_${questionId||"analyze"}`;
+    setLoading(p=>({...p,[qKey]:true}));
+    const q = COACH_QUESTIONS.find(q=>q.id===questionId) || COACH_QUESTIONS[0];
+    const sys="You are an elite body recomposition coach and registered dietitian specializing in plant-based athletes. You have access to the client's real biometric data below. Be specific, reference actual numbers, use clear headers, and give actionable advice. The client is vegan.";
     try {
       let res;
-      if(llmId==="claude") res=await callClaude(sys,`Lower my body fat:\n\n${ctx()}`);
-      else if(llmId==="gpt4"&&apiKeys.gpt4) res=await callGPT(sys,`Lower my body fat:\n\n${ctx()}`,apiKeys.gpt4);
+      if(llmId==="claude") res=await callClaude(sys,`${q.prompt}\n\nMY CURRENT DATA:\n${ctx()}`);
+      else if(llmId==="gpt4"&&apiKeys.gpt4) res=await callGPT(sys,`${q.prompt}\n\nMY CURRENT DATA:\n${ctx()}`,apiKeys.gpt4);
       else res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
-      setAnalyses(p=>({...p,[llmId]:res}));
-    } catch(e){setAnalyses(p=>({...p,[llmId]:`⚠ ${e.message}`}));}
-    setLoading(p=>({...p,[llmId]:false}));
+      setAnalyses(p=>({...p,[qKey]:res}));
+    } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
+    setLoading(p=>({...p,[qKey]:false}));
   };
 
   const getWorkout = async () => {
@@ -1324,31 +1335,49 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           </div>
 
           <div style={panel}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"16px",flexWrap:"wrap",gap:"12px"}}>
-              <div>
-                <div style={{color:LLMS.find(l=>l.id===activeLLM)?.col,fontSize:"16px",letterSpacing:"2px",fontWeight:"bold"}}>
-                  {LLMS.find(l=>l.id===activeLLM)?.icon} {LLMS.find(l=>l.id===activeLLM)?.name}
-                </div>
-                <div style={{fontSize:"11px",color:C.text3,marginTop:"4px"}}>{liveData?"LIVE DATA":"DEMO DATA"} · BODY FAT REDUCTION COACHING</div>
+            <div style={{marginBottom:"16px"}}>
+              <div style={{color:LLMS.find(l=>l.id===activeLLM)?.col,fontSize:"16px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
+                {LLMS.find(l=>l.id===activeLLM)?.icon} {LLMS.find(l=>l.id===activeLLM)?.name}
               </div>
-              <div style={{display:"flex",gap:"8px"}}>
-                {!LLMS.find(l=>l.id===activeLLM)?.native&&!apiKeys[activeLLM]&&(
-                  <button onClick={()=>{setKeyModal(activeLLM);setKeyDraft("");}} style={bOut(C.text3)}>🔑 ADD KEY</button>
-                )}
-                <button onClick={()=>analyze(activeLLM)} disabled={loading[activeLLM]} style={bFill(LLMS.find(l=>l.id===activeLLM)?.col||"#00ff9d")}>
-                  {loading[activeLLM]?"⟳ ANALYZING...":"▶ ANALYZE MY DATA"}
-                </button>
-              </div>
+              <div style={{fontSize:"11px",color:C.text3}}>{liveData?"LIVE DATA":"DEMO DATA"} · VEGAN BODY RECOMPOSITION COACHING</div>
             </div>
-            {analyses[activeLLM] ? (
-              <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"16px",fontSize:"13px",lineHeight:"2",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
-                {analyses[activeLLM]}
-              </div>
-            ) : (
+
+            {sectionLabel("ASK YOUR AI COACH:")}
+            <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"16px"}}>
+              {COACH_QUESTIONS.map(q=>{
+                const qKey=`${activeLLM}_${q.id}`;
+                return (
+                  <button key={q.id} onClick={()=>analyze(activeLLM,q.id)} disabled={loading[qKey]}
+                    style={{padding:"10px 16px",background:analyses[qKey]?"#0e0e1e":"transparent",
+                      border:`1px solid ${analyses[qKey]?"#4ade8060":LLMS.find(l=>l.id===activeLLM)?.col+"60"}`,
+                      color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
+                      fontSize:"12px",borderRadius:"4px",fontWeight:"600",fontFamily:"'Courier New',monospace",
+                      opacity:loading[qKey]?0.5:1}}>
+                    {loading[qKey]?"⟳ ...":q.label}
+                    {analyses[qKey]&&" ✓"}
+                  </button>
+                );
+              })}
+            </div>
+
+            {COACH_QUESTIONS.map(q=>{
+              const qKey=`${activeLLM}_${q.id}`;
+              if(!analyses[qKey]) return null;
+              return (
+                <div key={q.id} style={{marginBottom:"16px"}}>
+                  <div style={{fontSize:"12px",color:LLMS.find(l=>l.id===activeLLM)?.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"8px"}}>{q.label}</div>
+                  <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"16px",fontSize:"13px",lineHeight:"2",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
+                    {analyses[qKey]}
+                  </div>
+                </div>
+              );
+            })}
+
+            {!Object.keys(analyses).some(k=>k.startsWith(activeLLM)) && (
               <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"40px",textAlign:"center"}}>
                 <div style={{fontSize:"32px",marginBottom:"12px",opacity:0.3}}>{LLMS.find(l=>l.id===activeLLM)?.icon}</div>
-                <div style={{fontSize:"13px",color:C.text3}}>Click ANALYZE MY DATA to get personalized body fat reduction coaching</div>
-                <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Powered by your live biometric context</div>
+                <div style={{fontSize:"13px",color:C.text3}}>Tap any question above to get personalized coaching</div>
+                <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Powered by your live biometric data · Vegan-optimized</div>
               </div>
             )}
           </div>
