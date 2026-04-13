@@ -296,16 +296,16 @@ const getCols = (view, live, history) => {
     const yr = weekStart.getFullYear();
     return yr < thisYear ? `${w}W AGO '${String(yr).slice(2)}` : `${w}W AGO`;
   };
-  if(view==="daily") return Array.from({length:Math.max(all.length,1)},(_,i)=>{
+  if(view==="daily") return Array.from({length:Math.min(Math.max(all.length,1),30)},(_,i)=>{
     const d = all[i]||EMPTY_DAY;
     return {
       label: dayLabel(i, d),
       data: d, live: i===0&&!!live, dayIndex:i, allDays:all,
     };
   });
-  if(view==="weekly") { const weeks=Math.max(Math.ceil(all.length/7),1); return Array.from({length:weeks},(_,w)=>({label:weekLabel(w),data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
-  if(view==="monthly") { const months=Math.max(Math.ceil(all.length/30),1); return Array.from({length:months},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
-  const years=Math.max(Math.ceil(all.length/365),1); return Array.from({length:years},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
+  if(view==="weekly") { const weeks=Math.min(Math.max(Math.ceil(all.length/7),1),52); return Array.from({length:weeks},(_,w)=>({label:weekLabel(w),data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
+  if(view==="monthly") { const months=Math.min(Math.max(Math.ceil(all.length/30),1),120); return Array.from({length:months},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
+  const years=Math.min(Math.max(Math.ceil(all.length/365),1),20); return Array.from({length:years},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
 };
 
 // Find the previous day with the same workout type, starting after startIdx
