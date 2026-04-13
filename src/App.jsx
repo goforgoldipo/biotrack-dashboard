@@ -571,7 +571,7 @@ const mapImport = (p) => {
     potassium: p.potassium, calcium: p.calcium, iron: p.iron, vitaminC: p.vitaminC,
     sodium: p.sodium,
     sleepScore: p.sleepScore, hrv: p.hrv, readiness: p.readiness,
-    workoutType: p.workoutType, workoutDur: p.workoutDur||p.workoutDuration,
+    workoutType: (p.workoutType||"").replace("Traditional Strength Training","Strength").replace("High Intensity Interval Training","HIIT").replace("Functional Strength Training","Functional"), workoutDur: p.workoutDur||p.workoutDuration,
     workoutVol: p.workoutVol||p.workoutCalories, exercises: p.exercises||p.fitbodExercises,
     fitbodSets: p.fitbodSets, fitbodWorkingSets: p.fitbodWorkingSets, fitbodWarmupSets: p.fitbodWarmupSets,
     fitbodTotalReps: p.fitbodTotalReps, fitbodExerciseCount: p.fitbodExerciseCount,
