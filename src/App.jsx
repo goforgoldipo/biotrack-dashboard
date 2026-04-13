@@ -278,8 +278,18 @@ const getCols = (view, live, history) => {
     return Array.from({length:10},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
   }
   const realDays = (history||[]).map(h=>({...h, isDemo:false}));
-  const todayData = live ? { ...realDays[0], ...live, isDemo:false } : realDays[0] || EMPTY_DAY;
-  const all = [todayData, ...realDays.slice(1)];
+  let all;
+  if (live) {
+    const liveDate = live.syncDate || live.date;
+    const histDate = realDays[0]?.syncDate || realDays[0]?.date;
+    if (liveDate && histDate && liveDate === histDate) {
+      all = [{ ...realDays[0], ...live, isDemo:false }, ...realDays.slice(1)];
+    } else {
+      all = [{ ...live, isDemo:false }, ...realDays];
+    }
+  } else {
+    all = realDays.length ? realDays : [EMPTY_DAY];
+  }
   const thisYear = new Date().getFullYear();
   const dayLabel = (i, d) => {
     if(i===0) return live?"TODAY ◉ LIVE":"TODAY";
