@@ -794,6 +794,66 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
     setLoading(p=>({...p,photo:false}));
   };
 
+  // Hume screenshot OCR scanner
+  const [humeScanning, setHumeScanning] = useState(false);
+  const [humeScanResult, setHumeScanResult] = useState(null);
+  const [humeScanError, setHumeScanError] = useState("");
+  const humeFileRef = useRef(null);
+
+  const scanHumeScreenshot = async (files) => {
+    if (!files || !files.length) return;
+    setHumeScanning(true);
+    setHumeScanError("");
+    setHumeScanResult(null);
+    try {
+      const imgs = [];
+      for (const file of files) {
+        const b64 = await new Promise((res) => {
+          const r = new FileReader();
+          r.onload = (e) => res(e.target.result.split(",")[1]);
+          r.readAsDataURL(file);
+        });
+        imgs.push({ type: "image", source: { type: "base64", media_type: file.type || "image/png", data: b64 } });
+      }
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          messages: [{
+            role: "user",
+            content: [
+              ...imgs,
+              {
+                type: "text",
+                text: `Extract ALL numbers from this Hume Body Pod screenshot. Return ONLY a JSON object with these exact keys and numeric values (no text, no explanation):
+{"trunkFat":0,"rightArmFat":0,"leftArmFat":0,"rightLegFat":0,"leftLegFat":0,"trunkMuscle":0,"rightArmMuscle":0,"leftArmMuscle":0,"rightLegMuscle":0,"leftLegMuscle":0}
+If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Mass (lbs), fill the muscle fields. Fill only what you see, leave others as 0.`
+              }
+            ]
+          }]
+        })
+      });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message);
+      const text = j.content[0].text;
+      // Extract JSON from response
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Could not parse response");
+      const parsed = JSON.parse(match[0]);
+      // Filter out zeros
+      const result = {};
+      Object.entries(parsed).forEach(([k, v]) => { if (v && v > 0) result[k] = v; });
+      setHumeScanResult(result);
+      // Auto-fill into manual draft
+      setManualDraft(p => ({ ...p, ...result }));
+    } catch (e) {
+      setHumeScanError(`⚠ ${e.message}`);
+    }
+    setHumeScanning(false);
+  };
+
   const cols=getCols(view,liveData,liveHistory);
 
   // ─ Shared style objects
@@ -1407,6 +1467,37 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
       {/* ══════════ MANUAL TAB ══════════ */}
       {tab==="manual" && (
         <div style={{padding:"16px",maxWidth:"900px",margin:"0 auto"}}>
+
+          {/* Hume Screenshot Scanner */}
+          <div style={{...panel,marginBottom:"16px",borderColor:"#00e5ff40"}}>
+            {sectionLabel("📷 SCAN HUME SCREENSHOT — AUTO-EXTRACT BODY COMPOSITION")}
+            <div style={{display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}>
+              <input type="file" accept="image/*" multiple ref={humeFileRef} style={{display:"none"}}
+                onChange={(e)=>scanHumeScreenshot(Array.from(e.target.files))} />
+              <button onClick={()=>humeFileRef.current.click()} disabled={humeScanning}
+                style={{...bFill("#00e5ff"),opacity:humeScanning?0.5:1}}>
+                {humeScanning ? "⟳ SCANNING..." : "📷 UPLOAD HUME SCREENSHOT"}
+              </button>
+              <span style={{fontSize:"11px",color:C.text3}}>Upload 1-2 screenshots (Fat % and/or Muscle lbs) → AI reads the numbers</span>
+            </div>
+            {humeScanError && <div style={{color:"#ff6b35",fontSize:"12px",marginTop:"8px"}}>{humeScanError}</div>}
+            {humeScanResult && (
+              <div style={{marginTop:"12px",display:"flex",flexWrap:"wrap",gap:"12px"}}>
+                {Object.entries(humeScanResult).map(([k,v])=>{
+                  const isFat = k.includes("Fat");
+                  const label = k.replace(/([A-Z])/g," $1").replace(/^./,s=>s.toUpperCase());
+                  return (
+                    <div key={k} style={{background:isFat?"#ff6b3515":"#00e5ff15",border:`1px solid ${isFat?"#ff6b3540":"#00e5ff40"}`,borderRadius:"6px",padding:"8px 14px",textAlign:"center"}}>
+                      <div style={{fontSize:"18px",fontWeight:"bold",color:isFat?"#ff6b35":"#00e5ff"}}>{v}{isFat?"%":" lbs"}</div>
+                      <div style={{fontSize:"9px",color:C.text3,letterSpacing:"1px",marginTop:"2px"}}>{label}</div>
+                    </div>
+                  );
+                })}
+                <div style={{width:"100%",fontSize:"11px",color:"#4ade80",marginTop:"4px"}}>✓ Values auto-filled below — tap SAVE MEASUREMENTS to confirm</div>
+              </div>
+            )}
+          </div>
+
           {sectionLabel("MANUAL DATA ENTRY — OVERRIDES SENSOR DATA IN AI CONTEXT")}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:"14px",marginBottom:"16px"}}>
             {GROUPS.map(g=>(
