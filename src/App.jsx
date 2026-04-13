@@ -731,9 +731,13 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
 30D BF: ${DEMO[29].bodyFat}% → ${d.bodyFat}% | GOAL: Minimize body fat, preserve lean mass. Use segmental data to target highest-fat regions.`;
   },[today,manual,liveData]);
 
-  const callClaude = async (sys,prompt) => {
-    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:sys,messages:[{role:"user",content:prompt}]})});
+  const [claudeKey,setClaudeKey]=useState(()=>localStorage.getItem("bt_claude_key")||"");
+  const callClaude = async (sys,prompt,content) => {
+    const key = claudeKey;
+    if(!key) throw new Error("Enter your Anthropic API key in the AI Coach tab to enable Claude");
+    const msgs = content ? [{role:"user",content}] : [{role:"user",content:prompt}];
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,messages:msgs})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.content[0].text;
   };
   const callGPT = async (sys,prompt,key) => {
@@ -785,7 +789,8 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
     setLoading(p=>({...p,photo:true}));
     try {
       const imgs=photos.map(p=>({type:"image",source:{type:"base64",media_type:p.mime,data:p.base64}}));
-      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+      if(!claudeKey) throw new Error("Enter your Anthropic API key in the AI Coach tab");
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":claudeKey,"anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
           messages:[{role:"user",content:[...imgs,{type:"text",text:`Analyze body composition. BF ${today.bodyFat}%, Weight ${today.weight}lbs. Assess fat distribution, muscle development, target areas, give 3 specific adjustments.`}]}]})});
       const j=await r.json(); if(j.error)throw new Error(j.error.message);
@@ -815,9 +820,10 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
         });
         imgs.push({ type: "image", source: { type: "base64", media_type: file.type || "image/png", data: b64 } });
       }
+      if(!claudeKey) throw new Error("Enter your Anthropic API key in the AI Coach tab");
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 500,
@@ -1287,6 +1293,23 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       {/* ══════════ AI COACH TAB ══════════ */}
       {tab==="coach" && (
         <div style={{padding:"16px",maxWidth:"900px",margin:"0 auto"}}>
+          {!claudeKey && (
+            <div style={{...panel,marginBottom:"16px",borderColor:"#cc785c40"}}>
+              {sectionLabel("🔑 ANTHROPIC API KEY — REQUIRED FOR AI COACH")}
+              <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
+                <input type="password" placeholder="sk-ant-..." value={claudeKey}
+                  onChange={e=>{setClaudeKey(e.target.value);localStorage.setItem("bt_claude_key",e.target.value);}}
+                  style={{...inp,flex:1}} />
+                <span style={{fontSize:"11px",color:C.text3}}>Get key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#cc785c"}}>console.anthropic.com</a></span>
+              </div>
+            </div>
+          )}
+          {claudeKey && (
+            <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected</span>
+              <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
+            </div>
+          )}
           <div style={{marginBottom:"16px"}}>
             {sectionLabel("SELECT ANALYST MODEL:")}
             <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
