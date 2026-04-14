@@ -79,7 +79,13 @@ const DEMO = Array.from({ length: 3650 }, (_, i) => genDay(i));
 const GROUPS = [
   { id:"body", name:"BODY COMPOSITION", src:"HUME", col:"#ff6b35", rows:[
     {k:"weight",l:"Weight",u:"lbs",hi:true},{k:"bodyFat",l:"Body Fat %",u:"%",hi:true,fat:true},
-    {k:"leanMass",l:"Lean Mass",u:"lbs"},{k:"bmi",l:"BMI",u:""},{k:"visceralFat",l:"Visceral Fat",u:""},
+    {k:"leanMass",l:"Lean Mass",u:"lbs"},{k:"muscleMass",l:"Muscle Mass",u:"lbs",hi:true},
+    {k:"muscleRate",l:"Muscle Rate",u:"%"},{k:"fatMass",l:"Fat Mass",u:"lbs",fat:true},
+    {k:"bmi",l:"BMI",u:""},{k:"visceralFat",l:"Visceral Fat",u:"",fat:true},
+    {k:"subcutaneousFat",l:"Subcutaneous Fat",u:"",fat:true},
+    {k:"boneMass",l:"Bone Mass",u:"lbs"},
+    {k:"proteinMass",l:"Protein Mass",u:"lbs"},{k:"proteinRate",l:"Protein Rate",u:"%"},
+    {k:"moisture",l:"Body Water",u:"%"},
     {k:"bmr",l:"BMR",u:"kcal"},{k:"metabolicAge",l:"Metabolic Age",u:"yrs"},
   ]},
   { id:"segmental", name:"SEGMENTAL BODY FAT", src:"HUME BODY POD", col:"#00e5ff", rows:[
@@ -560,6 +566,9 @@ const mapImport = (p) => {
     vo2max: p.vo2max||p.vo2Max, standHours: p.standHours,
     weight: p.weight||p.bodyWeight, bodyFat: p.bodyFat||p.bodyFatPercentage,
     leanMass: p.leanMass||p.leanBodyMass, bmi: p.bmi, visceralFat: p.visceralFat,
+    muscleMass: p.muscleMass, muscleRate: p.muscleRate, fatMass: p.fatMass,
+    subcutaneousFat: p.subcutaneousFat, boneMass: p.boneMass,
+    proteinMass: p.proteinMass, proteinRate: p.proteinRate, moisture: p.moisture,
     bmr: p.bmr||p.basalMetabolicRate||p.basalCalories, metabolicAge: p.metabolicAge||p.metabolic_age,
     calories: p.calories||p.dietaryCalories, protein: p.protein,
     carbs: p.carbs||p.carbohydrates, fat: p.fat, fiber: p.fiber, water: p.water,
