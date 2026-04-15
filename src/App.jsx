@@ -641,6 +641,7 @@ const mapImport = (p) => {
   };
   // Compute leanMass from weight and bodyFat if not provided
   if(!m.leanMass && m.weight && m.bodyFat) m.leanMass = +(m.weight * (1 - m.bodyFat/100)).toFixed(1);
+  if(!m.fatMass && m.weight && m.bodyFat) m.fatMass = +(m.weight * m.bodyFat/100).toFixed(1);
   // Compute activeMins from workoutDur if not provided
   if(!m.activeMins && m.workoutDur) m.activeMins = Math.round(m.workoutDur);
   Object.keys(m).forEach(k=>{ if(m[k]===null||m[k]===undefined) delete m[k]; });
@@ -1018,7 +1019,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
   const kv=(v,suffix)=>{ const f=r1(v); return f==="—"?"—":`${f}${suffix}`; };
   const kpis=[
     {l:"BODY FAT",v:kv(today.bodyFat,"%"),c:"#ff6b35"},{l:"WEIGHT",v:kv(today.weight," lbs"),c:"#fbbf24"},
-    {l:"FAT MASS",v:kv(today.fatMass," lbs"),c:"#ff6b35"},{l:"LEAN MASS",v:kv(today.leanMass," lbs"),c:"#34d399"},
+    {l:"FAT MASS",v:kv(today.fatMass||(today.weight&&today.bodyFat?+(today.weight*today.bodyFat/100).toFixed(1):null)," lbs"),c:"#ff6b35"},{l:"LEAN MASS",v:kv(today.leanMass," lbs"),c:"#34d399"},
     {l:"HRV",v:kv(today.hrv," ms"),c:"#a78bfa"},{l:"READINESS",v:kv(today.readiness,"/100"),c:"#00e5ff"},
     {l:"SLEEP",v:kv(today.sleepScore,"/100"),c:"#818cf8"},
     {l:"STEPS",v:today.steps?Math.round(Number(today.steps)).toLocaleString():"—",c:"#f43f5e"},{l:"PROTEIN",v:kv(today.protein,"g"),c:"#34d399"},
