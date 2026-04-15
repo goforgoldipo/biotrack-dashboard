@@ -1431,13 +1431,13 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
           )}
 
-          {/* Horizontally scrollable coach columns */}
-          <div style={{display:"flex",gap:"12px",overflowX:"auto",paddingBottom:"12px",scrollSnapType:"x mandatory"}}>
+          {/* Responsive grid — 2 coaches per row on desktop, 1 per row on mobile */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(340px, 1fr))",gap:"12px"}}>
             {COACHES.map(coach => {
               const coachLLM = coachLLMs[coach.id]||"claude";
               const llmObj = LLMS.find(l=>l.id===coachLLM);
               return (
-                <div key={coach.id} style={{...panel,minWidth:"360px",maxWidth:"420px",flex:"0 0 380px",borderColor:coach.col+"40",scrollSnapAlign:"start",display:"flex",flexDirection:"column"}}>
+                <div key={coach.id} style={{...panel,borderColor:coach.col+"40",display:"flex",flexDirection:"column"}}>
                   {/* Coach header */}
                   <div style={{marginBottom:"12px",paddingBottom:"10px",borderBottom:`1px solid ${coach.col}30`}}>
                     <div style={{color:coach.col,fontSize:"15px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"6px"}}>
@@ -1500,8 +1500,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               );
             })}
           </div>
-
-          <div style={{fontSize:"10px",color:C.dim,textAlign:"center",marginTop:"8px"}}>← swipe to see all 8 coaches →</div>
 
           <div style={{...panel,marginTop:"16px"}}>
             {sectionLabel("LIVE DATA CONTEXT SENT TO AI:")}
