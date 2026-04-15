@@ -766,22 +766,59 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.choices[0].message.content;
   };
 
-  const COACH_QUESTIONS = [
-    {id:"analyze",label:"📊 ANALYZE MY DATA",prompt:"Analyze my current health data. Give 5 specific, data-driven recommendations to reduce body fat while preserving lean muscle. Reference actual numbers from my data. Prioritize highest-impact actions."},
-    {id:"workout7",label:"💪 7-DAY WORKOUT PLAN",prompt:"Design my exact workout plan for the next 7 days based on my training history, recovery data, and body composition. Include exercises, sets×reps, load recommendations, and rest days. Account for my HRV and sleep quality. I train with Fitbod-style workouts."},
-    {id:"meal7",label:"🥗 7-DAY VEGAN MEAL PLAN",prompt:"Create a detailed 7-day whole food plant-powered vegan meal plan optimized for fat loss while preserving muscle. Include exact meals (breakfast, lunch, dinner, snacks), calories, protein, carbs, fat for each day. Target high protein (180g+), moderate carbs, caloric deficit. Use real whole foods — no processed fake meats."},
-    {id:"fat10",label:"🔥 GET TO 10% BODY FAT",prompt:"I want to get to 10% body fat as fast as safely possible. Based on my current data, give me the exact step-by-step plan: daily calorie target, macro split, cardio prescription, training adjustments, sleep optimization, supplement protocol, and timeline projection. Be aggressive but science-based."},
-    {id:"weekly",label:"📋 WEEKLY REVIEW",prompt:"Give me a comprehensive weekly review. Compare this week's data to last week: weight trend, body fat trend, training volume by muscle group, nutrition compliance, sleep quality, HRV trend. Grade each category A-F. Tell me exactly what to improve next week."},
-    {id:"plateau",label:"⚠️ BREAK MY PLATEAU",prompt:"Analyze if I'm in a fat loss plateau based on my data trends. If yes, prescribe specific interventions: refeed strategy, cardio adjustments, training deload, calorie cycling, or metabolic reset. If no plateau, tell me what's working and what to double down on."},
+  const COACHES = [
+    {
+      id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
+      sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
+      questions:[
+        {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
+        {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
+        {id:"feedback",label:"📊 YESTERDAY'S FEEDBACK",prompt:"Review yesterday's workout performance. Analyze volume vs historical averages per muscle group, compare to my recovery state. Grade the session A-F and tell me what to adjust today."},
+        {id:"weak",label:"🔍 MY WEAK POINTS",prompt:"Analyze my training history across all muscle groups and identify the 3 weakest areas that are limiting my physique. Give specific programming changes to bring them up."},
+      ]
+    },
+    {
+      id:"food", icon:"🥗", name:"FOOD COACH", col:"#34d399",
+      sys:"You are an elite sports nutritionist and registered dietitian specializing in whole food plant-powered vegan athletes targeting body recomposition. You design meal plans that maximize protein (180g+), optimize macros for fat loss, and use real whole foods — not processed fake meats. Be specific with foods, portions, calories, and macros per meal.",
+      questions:[
+        {id:"today",label:"🍽️ TODAY'S MEALS",prompt:"Based on my current body comp, training schedule, and macro targets, give me exactly what to eat today. Specify breakfast, lunch, dinner, snacks with exact portions, calories, and macros. Total daily calories, protein (180g+), carbs, fats."},
+        {id:"next7",label:"📅 NEXT 7 DAY MEAL PLAN",prompt:"Create a complete 7-day whole food plant-powered vegan meal plan optimized for fat loss and muscle preservation. Each day: breakfast, lunch, dinner, 2 snacks with exact foods, portions, calories, and macros. Target 180g+ protein daily in a caloric deficit. Use legumes, tofu, tempeh, seitan, quinoa, etc."},
+        {id:"feedback",label:"📊 YESTERDAY'S NUTRITION",prompt:"Review yesterday's MyFitnessPal nutrition data. Calculate protein timing/distribution, macro compliance vs targets, micronutrient gaps. Grade A-F and give 3 specific changes for today."},
+        {id:"groceries",label:"🛒 GROCERY LIST",prompt:"Give me a grocery list for this week's meals organized by category (produce, proteins, grains, pantry, spices). Include quantities and budget-friendly tips."},
+      ]
+    },
+    {
+      id:"sleep", icon:"😴", name:"SLEEP COACH", col:"#a78bfa",
+      sys:"You are an elite sleep performance coach who analyzes circadian rhythm, sleep architecture, HRV, and lifestyle factors. You help athletes optimize sleep for recovery, fat loss, and performance. Be specific about bedtime routines, environmental factors, nutrition timing, and lifestyle changes. Reference actual Oura data.",
+      questions:[
+        {id:"today",label:"🌙 TONIGHT'S PROTOCOL",prompt:"Based on my recent sleep data (duration, deep/REM/light, HRV, readiness) and today's activities, give me an exact protocol for tonight: wind-down routine start time, bedtime, temperature, supplements, nutrition cutoff, blue light cutoff. Target optimal deep and REM sleep."},
+        {id:"next7",label:"📅 NEXT 7 DAY SLEEP PLAN",prompt:"Analyze my sleep patterns and create a 7-day plan to improve sleep quality and HRV. Identify the biggest limiters (late meals, stress, training timing, inconsistent bedtime) and give specific daily changes. Target 8+ hours, 1.5+ deep, 1.5+ REM."},
+        {id:"feedback",label:"📊 LAST NIGHT'S ANALYSIS",prompt:"Deep analysis of last night's sleep. Compare to my baseline, identify what hurt quality, correlate with yesterday's behaviors (training intensity, caffeine, meals, stress). Give 3 changes to improve tonight."},
+        {id:"correlate",label:"🔗 SLEEP CORRELATIONS",prompt:"Analyze my historical data to find what correlates with my best and worst sleep. Identify patterns: 'your deep sleep is 25% higher when X' or 'HRV drops 20% when Y'. Give me the rules to live by."},
+      ]
+    },
+    {
+      id:"progress", icon:"🏆", name:"PROGRESS COACH", col:"#f43f5e",
+      sys:"You are an elite mindset coach and body recomposition psychologist. You motivate, inspire, and hold athletes accountable to their goals while celebrating wins and reframing setbacks. Be direct, data-driven, and emotionally intelligent. Reference specific achievements from the client's historical data to build momentum. The client's goal is 10% body fat.",
+      questions:[
+        {id:"today",label:"🔥 DAILY MOTIVATION",prompt:"Give me today's motivational brief. Acknowledge what I've achieved (reference specific data milestones), identify today's key focus area, and give me 3 actionable commitments for today that will move the needle toward 10% body fat."},
+        {id:"wins",label:"🏅 MY WINS THIS MONTH",prompt:"Analyze my data and call out every measurable win from the past 30 days — body comp changes, training PRs, consistency streaks, sleep improvements. Make me feel the progress I've made. Be specific with numbers."},
+        {id:"trajectory",label:"🚀 MY TRAJECTORY",prompt:"Project my trajectory to 10% body fat based on my current pace. When will I hit 14%, 12%, 10%? What needs to change to accelerate? Create a visual timeline and milestone plan. Make it ambitious but achievable."},
+        {id:"reframe",label:"💡 REFRAME & REFOCUS",prompt:"If I'm feeling stuck, unmotivated, or frustrated — diagnose what's really going on from my data. Is it actually stalled progress, or am I being too hard on myself? Give me perspective and a path forward."},
+      ]
+    },
   ];
 
-  const analyze = async (llmId, questionId) => {
+  const [activeCoach,setActiveCoach]=useState("workout");
+
+  const analyze = async (llmId, coachId, questionId) => {
     const l=LLMS.find(x=>x.id===llmId);
     if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
-    const qKey = `${llmId}_${questionId||"analyze"}`;
+    const qKey = `${coachId}_${llmId}_${questionId}`;
     setLoading(p=>({...p,[qKey]:true}));
-    const q = COACH_QUESTIONS.find(q=>q.id===questionId) || COACH_QUESTIONS[0];
-    const sys="You are an elite body recomposition coach and registered dietitian specializing in plant-based athletes. You have access to the client's real biometric data below. Be specific, reference actual numbers, use clear headers, and give actionable advice. The client is vegan.";
+    const coach = COACHES.find(c=>c.id===coachId);
+    const q = coach.questions.find(q=>q.id===questionId);
+    const sys = coach.sys;
     try {
       let res;
       if(llmId==="claude") res=await callClaude(sys,`${q.prompt}\n\nMY CURRENT DATA:\n${ctx()}`);
@@ -1353,53 +1390,77 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
           </div>
 
-          <div style={panel}>
-            <div style={{marginBottom:"16px"}}>
-              <div style={{color:LLMS.find(l=>l.id===activeLLM)?.col,fontSize:"16px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
-                {LLMS.find(l=>l.id===activeLLM)?.icon} {LLMS.find(l=>l.id===activeLLM)?.name}
-              </div>
-              <div style={{fontSize:"11px",color:C.text3}}>{liveData?"LIVE DATA":"DEMO DATA"} · VEGAN BODY RECOMPOSITION COACHING</div>
+          {/* Coach selector */}
+          <div style={{marginBottom:"16px"}}>
+            {sectionLabel("SELECT YOUR COACH:")}
+            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              {COACHES.map(c=>(
+                <button key={c.id} onClick={()=>setActiveCoach(c.id)}
+                  style={{padding:"12px 18px",background:activeCoach===c.id?c.col+"25":"transparent",
+                    border:`1px solid ${activeCoach===c.id?c.col:C.bord2}`,
+                    color:activeCoach===c.id?c.col:C.text2,cursor:"pointer",fontSize:"12px",
+                    borderRadius:"4px",display:"flex",alignItems:"center",gap:"8px",
+                    fontWeight:activeCoach===c.id?"bold":"normal",letterSpacing:"1px"}}>
+                  <span style={{fontSize:"18px"}}>{c.icon}</span>{c.name}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {sectionLabel("ASK YOUR AI COACH:")}
-            <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"16px"}}>
-              {COACH_QUESTIONS.map(q=>{
-                const qKey=`${activeLLM}_${q.id}`;
-                return (
-                  <button key={q.id} onClick={()=>analyze(activeLLM,q.id)} disabled={loading[qKey]}
-                    style={{padding:"10px 16px",background:analyses[qKey]?"#0e0e1e":"transparent",
-                      border:`1px solid ${analyses[qKey]?"#4ade8060":LLMS.find(l=>l.id===activeLLM)?.col+"60"}`,
-                      color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
-                      fontSize:"12px",borderRadius:"4px",fontWeight:"600",fontFamily:"'Courier New',monospace",
-                      opacity:loading[qKey]?0.5:1}}>
-                    {loading[qKey]?"⟳ ...":q.label}
-                    {analyses[qKey]&&" ✓"}
-                  </button>
-                );
-              })}
-            </div>
-
-            {COACH_QUESTIONS.map(q=>{
-              const qKey=`${activeLLM}_${q.id}`;
-              if(!analyses[qKey]) return null;
-              return (
-                <div key={q.id} style={{marginBottom:"16px"}}>
-                  <div style={{fontSize:"12px",color:LLMS.find(l=>l.id===activeLLM)?.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"8px"}}>{q.label}</div>
-                  <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"16px",fontSize:"13px",lineHeight:"2",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
-                    {analyses[qKey]}
+          {(() => {
+            const coach = COACHES.find(c=>c.id===activeCoach);
+            return (
+              <div style={{...panel,borderColor:coach.col+"40"}}>
+                <div style={{marginBottom:"16px"}}>
+                  <div style={{color:coach.col,fontSize:"18px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
+                    {coach.icon} {coach.name}
+                  </div>
+                  <div style={{fontSize:"11px",color:C.text3}}>
+                    Analyzing with <span style={{color:LLMS.find(l=>l.id===activeLLM)?.col,fontWeight:"bold"}}>{LLMS.find(l=>l.id===activeLLM)?.icon} {LLMS.find(l=>l.id===activeLLM)?.name}</span> · {liveData?"LIVE DATA":"DEMO DATA"}
                   </div>
                 </div>
-              );
-            })}
 
-            {!Object.keys(analyses).some(k=>k.startsWith(activeLLM)) && (
-              <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"40px",textAlign:"center"}}>
-                <div style={{fontSize:"32px",marginBottom:"12px",opacity:0.3}}>{LLMS.find(l=>l.id===activeLLM)?.icon}</div>
-                <div style={{fontSize:"13px",color:C.text3}}>Tap any question above to get personalized coaching</div>
-                <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Powered by your live biometric data · Vegan-optimized</div>
+                {sectionLabel("ASK THIS COACH:")}
+                <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"16px"}}>
+                  {coach.questions.map(q=>{
+                    const qKey=`${coach.id}_${activeLLM}_${q.id}`;
+                    return (
+                      <button key={q.id} onClick={()=>analyze(activeLLM,coach.id,q.id)} disabled={loading[qKey]}
+                        style={{padding:"10px 16px",background:analyses[qKey]?"#0e0e1e":"transparent",
+                          border:`1px solid ${analyses[qKey]?"#4ade8060":coach.col+"60"}`,
+                          color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
+                          fontSize:"12px",borderRadius:"4px",fontWeight:"600",fontFamily:"'Courier New',monospace",
+                          opacity:loading[qKey]?0.5:1}}>
+                        {loading[qKey]?"⟳ ...":q.label}
+                        {analyses[qKey]&&" ✓"}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {coach.questions.map(q=>{
+                  const qKey=`${coach.id}_${activeLLM}_${q.id}`;
+                  if(!analyses[qKey]) return null;
+                  return (
+                    <div key={q.id} style={{marginBottom:"16px"}}>
+                      <div style={{fontSize:"12px",color:coach.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"8px"}}>{q.label}</div>
+                      <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"16px",fontSize:"13px",lineHeight:"2",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
+                        {analyses[qKey]}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {!coach.questions.some(q=>analyses[`${coach.id}_${activeLLM}_${q.id}`]) && (
+                  <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"40px",textAlign:"center"}}>
+                    <div style={{fontSize:"40px",marginBottom:"12px"}}>{coach.icon}</div>
+                    <div style={{fontSize:"13px",color:C.text3}}>Tap any question above to get personalized {coach.name.toLowerCase()} guidance</div>
+                    <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Powered by your live biometric data</div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            );
+          })()}
 
           <div style={{...panel,marginTop:"12px"}}>
             {sectionLabel("LIVE DATA CONTEXT SENT TO AI:")}
