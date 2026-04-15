@@ -850,6 +850,10 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
   ];
 
   const [activeCoach,setActiveCoach]=useState("workout");
+  const [coachLLMs,setCoachLLMs]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_coach_llms")) || {}; } catch { return {}; }
+  });
+  useEffect(()=>{ localStorage.setItem("bt_coach_llms",JSON.stringify(coachLLMs)); },[coachLLMs]);
 
   const analyze = async (llmId, coachId, questionId) => {
     const l=LLMS.find(x=>x.id===llmId);
@@ -1399,7 +1403,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
       {/* ══════════ AI COACH TAB ══════════ */}
       {tab==="coach" && (
-        <div style={{padding:"16px",maxWidth:"900px",margin:"0 auto"}}>
+        <div style={{padding:"16px"}}>
           {!claudeKey && (
             <div style={{...panel,marginBottom:"16px",borderColor:"#cc785c40"}}>
               {sectionLabel("🔑 ANTHROPIC API KEY — REQUIRED FOR AI COACH")}
@@ -1412,97 +1416,94 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
           )}
           {claudeKey && (
-            <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected</span>
-              <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
+            <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
+              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected · 8 coaches ready</span>
+              <div style={{display:"flex",gap:"8px"}}>
+                <button onClick={async ()=>{
+                  for(const coach of COACHES){
+                    const llm = coachLLMs[coach.id]||"claude";
+                    const q = coach.questions[0];
+                    await analyze(llm, coach.id, q.id);
+                  }
+                }} style={{...bFill("#00ff9d"),padding:"6px 14px",fontSize:"10px"}}>☰ COACH ME ON ALL 8 TODAY</button>
+                <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
+              </div>
             </div>
           )}
-          <div style={{marginBottom:"16px"}}>
-            {sectionLabel("SELECT ANALYST MODEL:")}
-            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-              {LLMS.map(l=>(
-                <button key={l.id} onClick={()=>setActiveLLM(l.id)} style={{padding:"9px 18px",background:activeLLM===l.id?l.col+"25":"transparent",border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text2,cursor:"pointer",fontSize:"12px",borderRadius:"4px",display:"flex",alignItems:"center",gap:"7px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
-                  <span style={{fontSize:"15px"}}>{l.icon}</span>{l.name}
-                  {!l.native&&!apiKeys[l.id]&&<span style={{fontSize:"9px",opacity:0.6}}>🔑</span>}
-                  {!l.native&&apiKeys[l.id]&&<span style={{fontSize:"10px",color:"#4ade80"}}>✓</span>}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          {/* Coach selector */}
-          <div style={{marginBottom:"16px"}}>
-            {sectionLabel("SELECT YOUR COACH:")}
-            <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-              {COACHES.map(c=>(
-                <button key={c.id} onClick={()=>setActiveCoach(c.id)}
-                  style={{padding:"12px 18px",background:activeCoach===c.id?c.col+"25":"transparent",
-                    border:`1px solid ${activeCoach===c.id?c.col:C.bord2}`,
-                    color:activeCoach===c.id?c.col:C.text2,cursor:"pointer",fontSize:"12px",
-                    borderRadius:"4px",display:"flex",alignItems:"center",gap:"8px",
-                    fontWeight:activeCoach===c.id?"bold":"normal",letterSpacing:"1px"}}>
-                  <span style={{fontSize:"18px"}}>{c.icon}</span>{c.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {(() => {
-            const coach = COACHES.find(c=>c.id===activeCoach);
-            return (
-              <div style={{...panel,borderColor:coach.col+"40"}}>
-                <div style={{marginBottom:"16px"}}>
-                  <div style={{color:coach.col,fontSize:"18px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
-                    {coach.icon} {coach.name}
-                  </div>
-                  <div style={{fontSize:"11px",color:C.text3}}>
-                    Analyzing with <span style={{color:LLMS.find(l=>l.id===activeLLM)?.col,fontWeight:"bold"}}>{LLMS.find(l=>l.id===activeLLM)?.icon} {LLMS.find(l=>l.id===activeLLM)?.name}</span> · {liveData?"LIVE DATA":"DEMO DATA"}
-                  </div>
-                </div>
-
-                {sectionLabel("ASK THIS COACH:")}
-                <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"16px"}}>
-                  {coach.questions.map(q=>{
-                    const qKey=`${coach.id}_${activeLLM}_${q.id}`;
-                    return (
-                      <button key={q.id} onClick={()=>analyze(activeLLM,coach.id,q.id)} disabled={loading[qKey]}
-                        style={{padding:"10px 16px",background:analyses[qKey]?"#0e0e1e":"transparent",
-                          border:`1px solid ${analyses[qKey]?"#4ade8060":coach.col+"60"}`,
-                          color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
-                          fontSize:"12px",borderRadius:"4px",fontWeight:"600",fontFamily:"'Courier New',monospace",
-                          opacity:loading[qKey]?0.5:1}}>
-                        {loading[qKey]?"⟳ ...":q.label}
-                        {analyses[qKey]&&" ✓"}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {coach.questions.map(q=>{
-                  const qKey=`${coach.id}_${activeLLM}_${q.id}`;
-                  if(!analyses[qKey]) return null;
-                  return (
-                    <div key={q.id} style={{marginBottom:"16px"}}>
-                      <div style={{fontSize:"12px",color:coach.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"8px"}}>{q.label}</div>
-                      <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"16px",fontSize:"13px",lineHeight:"2",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
-                        {analyses[qKey]}
-                      </div>
+          {/* Horizontally scrollable coach columns */}
+          <div style={{display:"flex",gap:"12px",overflowX:"auto",paddingBottom:"12px",scrollSnapType:"x mandatory"}}>
+            {COACHES.map(coach => {
+              const coachLLM = coachLLMs[coach.id]||"claude";
+              const llmObj = LLMS.find(l=>l.id===coachLLM);
+              return (
+                <div key={coach.id} style={{...panel,minWidth:"360px",maxWidth:"420px",flex:"0 0 380px",borderColor:coach.col+"40",scrollSnapAlign:"start",display:"flex",flexDirection:"column"}}>
+                  {/* Coach header */}
+                  <div style={{marginBottom:"12px",paddingBottom:"10px",borderBottom:`1px solid ${coach.col}30`}}>
+                    <div style={{color:coach.col,fontSize:"15px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"6px"}}>
+                      {coach.icon} {coach.name}
                     </div>
-                  );
-                })}
-
-                {!coach.questions.some(q=>analyses[`${coach.id}_${activeLLM}_${q.id}`]) && (
-                  <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"40px",textAlign:"center"}}>
-                    <div style={{fontSize:"40px",marginBottom:"12px"}}>{coach.icon}</div>
-                    <div style={{fontSize:"13px",color:C.text3}}>Tap any question above to get personalized {coach.name.toLowerCase()} guidance</div>
-                    <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Powered by your live biometric data</div>
+                    {/* Model picker for this coach */}
+                    <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                      {LLMS.map(l=>(
+                        <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[coach.id]:l.id}))}
+                          style={{padding:"3px 8px",background:coachLLM===l.id?l.col+"30":"transparent",
+                            border:`1px solid ${coachLLM===l.id?l.col:C.bord2}`,color:coachLLM===l.id?l.col:C.text3,
+                            cursor:"pointer",fontSize:"9px",borderRadius:"3px",fontWeight:coachLLM===l.id?"bold":"normal"}}>
+                          {l.icon} {l.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })()}
 
-          <div style={{...panel,marginTop:"12px"}}>
+                  {/* Question buttons */}
+                  <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"12px"}}>
+                    {coach.questions.map(q=>{
+                      const qKey=`${coach.id}_${coachLLM}_${q.id}`;
+                      return (
+                        <button key={q.id} onClick={()=>analyze(coachLLM,coach.id,q.id)} disabled={loading[qKey]}
+                          style={{padding:"8px 10px",background:analyses[qKey]?"#0e0e1e":"transparent",
+                            border:`1px solid ${analyses[qKey]?"#4ade8060":coach.col+"40"}`,
+                            color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
+                            fontSize:"11px",borderRadius:"3px",fontWeight:"600",fontFamily:"'Courier New',monospace",
+                            textAlign:"left",opacity:loading[qKey]?0.5:1}}>
+                          {loading[qKey]?"⟳ analyzing...":q.label}
+                          {analyses[qKey]&&" ✓"}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Responses */}
+                  <div style={{flex:1,overflowY:"auto",maxHeight:"600px"}}>
+                    {coach.questions.map(q=>{
+                      const qKey=`${coach.id}_${coachLLM}_${q.id}`;
+                      if(!analyses[qKey]) return null;
+                      return (
+                        <div key={q.id} style={{marginBottom:"10px"}}>
+                          <div style={{fontSize:"10px",color:coach.col,fontWeight:"bold",letterSpacing:"1px",marginBottom:"4px"}}>{q.label}</div>
+                          <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"3px",padding:"10px",fontSize:"11px",lineHeight:"1.7",whiteSpace:"pre-wrap",color:C.text1}}>
+                            {analyses[qKey]}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {!coach.questions.some(q=>analyses[`${coach.id}_${coachLLM}_${q.id}`]) && (
+                      <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"3px",padding:"20px",textAlign:"center"}}>
+                        <div style={{fontSize:"28px",marginBottom:"6px",opacity:0.4}}>{coach.icon}</div>
+                        <div style={{fontSize:"10px",color:C.text3}}>Tap a question above</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{fontSize:"10px",color:C.dim,textAlign:"center",marginTop:"8px"}}>← swipe to see all 8 coaches →</div>
+
+          <div style={{...panel,marginTop:"16px"}}>
             {sectionLabel("LIVE DATA CONTEXT SENT TO AI:")}
             <pre style={{fontSize:"11px",color:C.text2,overflow:"auto",margin:0,lineHeight:"1.8"}}>{ctx()}</pre>
           </div>
