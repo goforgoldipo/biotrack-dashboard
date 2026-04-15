@@ -313,28 +313,44 @@ const getCols = (view, live, history) => {
     return yr < thisYear ? `${w}W AGO '${String(yr).slice(2)}` : `${w}W AGO`;
   };
   if(view==="daily") {
-    // Build a map of history by date key (YYYY-MM-DD)
+    // Build a map of history by local date key (YYYY-MM-DD in local timezone)
     const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const byDateKey = {};
     all.forEach(d => {
       if(!d||!d.syncDate) return;
+      // Try parsing "Apr 15 2026" first, then "Apr 15" with current year
       let parsed = new Date(d.syncDate);
-      if(isNaN(parsed)) {
+      if(isNaN(parsed.getTime())) {
         parsed = new Date(d.syncDate+", "+thisYear);
-        if(parsed > new Date(Date.now()+86400000)) parsed.setFullYear(thisYear-1);
+        if(!isNaN(parsed.getTime()) && parsed > new Date(Date.now()+86400000)) {
+          parsed.setFullYear(thisYear-1);
+        }
       }
-      if(!isNaN(parsed)) {
-        const key = parsed.toISOString().slice(0,10);
-        byDateKey[key] = d;
+      if(!isNaN(parsed.getTime())) {
+        byDateKey[localKey(parsed)] = d;
       }
     });
+    // Also index live data's date if present (may have different format than history)
+    if(live && live.syncDate) {
+      let liveParsed = new Date(live.syncDate);
+      if(isNaN(liveParsed.getTime())) {
+        liveParsed = new Date(live.syncDate+", "+thisYear);
+        if(!isNaN(liveParsed.getTime()) && liveParsed > new Date(Date.now()+86400000)) {
+          liveParsed.setFullYear(thisYear-1);
+        }
+      }
+      if(!isNaN(liveParsed.getTime())) {
+        const k = localKey(liveParsed);
+        byDateKey[k] = { ...byDateKey[k], ...live, isDemo:false };
+      }
+    }
     // Generate 30 consecutive calendar days starting from today
     const today = new Date();
-    today.setHours(12,0,0,0);
     return Array.from({length:30},(_,i)=>{
-      const date = new Date(today.getTime() - i*86400000);
-      const key = date.toISOString().slice(0,10);
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      const key = localKey(date);
       const d = byDateKey[key] || EMPTY_DAY;
       const dow = DOW[date.getDay()];
       const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
