@@ -312,13 +312,46 @@ const getCols = (view, live, history) => {
     const yr = weekStart.getFullYear();
     return yr < thisYear ? `${w}W AGO '${String(yr).slice(2)}` : `${w}W AGO`;
   };
-  if(view==="daily") return Array.from({length:Math.min(Math.max(all.length,1),30)},(_,i)=>{
-    const d = all[i]||EMPTY_DAY;
-    return {
-      label: dayLabel(i, d),
-      data: d, live: i===0&&!!live, dayIndex:i, allDays:all,
-    };
-  });
+  if(view==="daily") {
+    // Build a map of history by date key (YYYY-MM-DD)
+    const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const byDateKey = {};
+    all.forEach(d => {
+      if(!d||!d.syncDate) return;
+      let parsed = new Date(d.syncDate);
+      if(isNaN(parsed)) {
+        parsed = new Date(d.syncDate+", "+thisYear);
+        if(parsed > new Date(Date.now()+86400000)) parsed.setFullYear(thisYear-1);
+      }
+      if(!isNaN(parsed)) {
+        const key = parsed.toISOString().slice(0,10);
+        byDateKey[key] = d;
+      }
+    });
+    // Generate 30 consecutive calendar days starting from today
+    const today = new Date();
+    today.setHours(12,0,0,0);
+    return Array.from({length:30},(_,i)=>{
+      const date = new Date(today.getTime() - i*86400000);
+      const key = date.toISOString().slice(0,10);
+      const d = byDateKey[key] || EMPTY_DAY;
+      const dow = DOW[date.getDay()];
+      const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+      const yr = date.getFullYear();
+      let label;
+      if(i===0) label = live?"TODAY ◉ LIVE":"TODAY";
+      else if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
+      else label = `${dow} ${dateStr}`;
+      return {
+        label,
+        data: d,
+        live: i===0&&!!live,
+        dayIndex:i,
+        allDays:all,
+      };
+    });
+  }
   if(view==="weekly") { const weeks=Math.min(Math.max(Math.ceil(all.length/7),1),52); return Array.from({length:weeks},(_,w)=>({label:weekLabel(w),data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
   if(view==="monthly") { const months=Math.min(Math.max(Math.ceil(all.length/30),1),120); return Array.from({length:months},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
   const years=Math.min(Math.max(Math.ceil(all.length/365),1),20); return Array.from({length:years},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
