@@ -347,11 +347,13 @@ const getCols = (view, live, history) => {
       }
     }
     // Generate 30 consecutive calendar days starting from today
-    const today = new Date();
+    const todayJs = new Date();
     return Array.from({length:30},(_,i)=>{
-      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+      const date = new Date(todayJs.getFullYear(), todayJs.getMonth(), todayJs.getDate() - i);
       const key = localKey(date);
-      const d = byDateKey[key] || EMPTY_DAY;
+      // For i===0 (TODAY), always include live data if it exists
+      let d = byDateKey[key] || EMPTY_DAY;
+      if(i===0 && live) d = { ...d, ...live, isDemo:false };
       const dow = DOW[date.getDay()];
       const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
       const yr = date.getFullYear();
