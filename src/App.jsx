@@ -358,9 +358,9 @@ const getCols = (view, live, history) => {
       const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
       const yr = date.getFullYear();
       let label;
-      if(i===0) label = live?"TODAY ◉ LIVE":"TODAY";
-      else if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
+      if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
       else label = `${dow} ${dateStr}`;
+      if(i===0 && live) label = `${label} ●`;
       return {
         label,
         data: d,
