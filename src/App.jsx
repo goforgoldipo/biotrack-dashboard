@@ -765,7 +765,28 @@ export default function App() {
     fetchFromAPI(url, secret);
   };
 
-  const today = liveData ? { ...liveData } : DEMO[0];
+  // Find today's actual data — prefer liveData if it's from today, else check history
+  const today = (() => {
+    const now = new Date();
+    const nowKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const parseSyncDate = (s) => {
+      if(!s) return null;
+      let p = new Date(s);
+      if(isNaN(p.getTime())) {
+        p = new Date(s+", "+now.getFullYear());
+        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) p.setFullYear(p.getFullYear()-1);
+      }
+      if(isNaN(p.getTime())) return null;
+      return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`;
+    };
+    // Check if liveData is from today
+    if(liveData && parseSyncDate(liveData.syncDate) === nowKey) return { ...liveData };
+    // Search history for today's entry
+    const todayInHistory = (liveHistory||[]).find(h => parseSyncDate(h.syncDate) === nowKey);
+    if(todayInHistory) return { ...todayInHistory, ...(liveData && parseSyncDate(liveData.syncDate) === nowKey ? liveData : {}) };
+    // Fall back to liveData even if stale (for KPI display)
+    return liveData ? { ...liveData } : DEMO[0];
+  })();
 
   const importJSON = () => {
     setJsonError("");
