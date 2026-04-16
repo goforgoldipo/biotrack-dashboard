@@ -317,31 +317,28 @@ const getCols = (view, live, history) => {
     const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const parseDate = (s) => {
+      if(!s) return null;
+      const hasYear = /\b\d{4}\b/.test(s);
+      let p;
+      if(hasYear) {
+        p = new Date(s);
+      } else {
+        p = new Date(s+", "+thisYear);
+        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) p.setFullYear(thisYear-1);
+      }
+      return isNaN(p.getTime()) ? null : p;
+    };
     const byDateKey = {};
     all.forEach(d => {
       if(!d||!d.syncDate) return;
-      // Try parsing "Apr 15 2026" first, then "Apr 15" with current year
-      let parsed = new Date(d.syncDate);
-      if(isNaN(parsed.getTime())) {
-        parsed = new Date(d.syncDate+", "+thisYear);
-        if(!isNaN(parsed.getTime()) && parsed > new Date(Date.now()+86400000)) {
-          parsed.setFullYear(thisYear-1);
-        }
-      }
-      if(!isNaN(parsed.getTime())) {
-        byDateKey[localKey(parsed)] = d;
-      }
+      const parsed = parseDate(d.syncDate);
+      if(parsed) byDateKey[localKey(parsed)] = d;
     });
-    // Also index live data's date if present (may have different format than history)
+    // Also index live data's date if present
     if(live && live.syncDate) {
-      let liveParsed = new Date(live.syncDate);
-      if(isNaN(liveParsed.getTime())) {
-        liveParsed = new Date(live.syncDate+", "+thisYear);
-        if(!isNaN(liveParsed.getTime()) && liveParsed > new Date(Date.now()+86400000)) {
-          liveParsed.setFullYear(thisYear-1);
-        }
-      }
-      if(!isNaN(liveParsed.getTime())) {
+      const liveParsed = parseDate(live.syncDate);
+      if(liveParsed) {
         const k = localKey(liveParsed);
         byDateKey[k] = { ...byDateKey[k], ...live, isDemo:false };
       }
@@ -596,10 +593,16 @@ const mapImport = (p) => {
   // syncDate can be "Apr 12 2025" (with year) or "Apr 12" (without year)
   let refDate;
   if (p.syncDate) {
-    let parsed = new Date(p.syncDate);
-    if (isNaN(parsed)) {
+    // Does syncDate contain a 4-digit year?
+    const hasYear = /\b\d{4}\b/.test(p.syncDate);
+    let parsed;
+    if (hasYear) {
+      parsed = new Date(p.syncDate);
+    } else {
       parsed = new Date(p.syncDate + ", " + new Date().getFullYear());
-      if (parsed > new Date(Date.now() + 86400000)) parsed.setFullYear(parsed.getFullYear() - 1);
+      if (!isNaN(parsed.getTime()) && parsed > new Date(Date.now() + 86400000)) {
+        parsed.setFullYear(parsed.getFullYear() - 1);
+      }
     }
     refDate = parsed;
   } else if (p._receivedAt) {
@@ -771,10 +774,17 @@ export default function App() {
     const nowKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     const parseSyncDate = (s) => {
       if(!s) return null;
-      let p = new Date(s);
-      if(isNaN(p.getTime())) {
+      // Does the string explicitly contain a 4-digit year? e.g. "Apr 16 2026"
+      const hasYear = /\b\d{4}\b/.test(s);
+      let p;
+      if(hasYear) {
+        p = new Date(s);
+      } else {
+        // No year in string — assume current year, roll back if that's in the future
         p = new Date(s+", "+now.getFullYear());
-        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) p.setFullYear(p.getFullYear()-1);
+        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) {
+          p.setFullYear(p.getFullYear()-1);
+        }
       }
       if(isNaN(p.getTime())) return null;
       return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`;

@@ -101,7 +101,7 @@ describe("🗂️ Tab order — SYNC must be last", () => {
 describe("📊 Data groups — all 5 must exist with correct source labels", () => {
   test("BODY COMPOSITION group exists",       () => expect(APP).toContain("BODY COMPOSITION"));
   test("SEGMENTAL BODY FAT group exists",     () => expect(APP).toContain("SEGMENTAL BODY FAT"));
-  test("SLEEP group exists",                  () => expect(APP).toContain(`name:"SLEEP"`));
+  test("SLEEP group exists",                  () => expect(APP).toContain(`name:"SLEEP & RECOVERY"`));
   test("NUTRITION group exists",              () => expect(APP).toContain("NUTRITION"));
   test("ACTIVITY group exists",               () => expect(APP).toContain("ACTIVITY"));
   test("TRAINING group exists",               () => expect(APP).toContain("TRAINING"));
@@ -120,7 +120,8 @@ describe("📐 Key metrics — all must exist in schema", () => {
     "sleepScore","hrv","restingHR","readiness","sleepDur","deepSleep","remSleep",
     "calories","protein","carbs","fat","fiber","water",
     "steps","calsBurned","avgHR","vo2max","standHours",
-    "workoutType","workoutVol","workoutDur","exercises",
+    "workoutType","workoutVol","workoutDur",
+    "fitbodSets","fitbodWorkingSets","fitbodTotalReps","fitbodExerciseCount","fitbodMaxWeightLbs","fitbodMuscleGroups",
   ];
   mustHave.forEach(k => {
     test(`metric "${k}" exists in schema`, () => expect(APP).toContain(`k:"${k}"`));
