@@ -1034,6 +1034,40 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
   const cols=getCols(view,liveData,liveHistory);
 
+  // ─ CSV Download — exports all groups × all columns for the current view period
+  const downloadCSV = () => {
+    const escCSV = (v) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g,'""')}"` : s;
+    };
+    const colLabels = cols.map(c => c.label);
+    // Header row: Metric, Unit, Group, [col labels...]
+    const headerRow = ["Metric","Unit","Group",...colLabels].map(escCSV).join(",");
+    const dataRows = [];
+    for (const g of sortedGroups) {
+      for (const row of g.rows) {
+        const vals = cols.map(c => {
+          const v = c.data[row.k];
+          if (v === null || v === undefined) return "";
+          if (typeof v === "number") return Number.isInteger(v) ? v : +v.toFixed(2);
+          return v;
+        });
+        dataRows.push([row.l, row.u||"", g.name, ...vals].map(escCSV).join(","));
+      }
+    }
+    const csvContent = [headerRow, ...dataRows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const now = new Date();
+    const dateStamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+    a.href = url;
+    a.download = `biotrack_${view}_${dateStamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ─ Shared style objects
   const panel={background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"6px",padding:"16px"};
   const inp={background:"#0a0a16",border:`1px solid ${C.bord2}`,color:C.text1,padding:"8px 12px",fontSize:"13px",borderRadius:"4px",outline:"none"};
@@ -1286,15 +1320,18 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       {tab==="dashboard" && (
         <>
           {/* Period selector */}
-          <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"10px 16px",borderBottom:`1px solid ${C.bord}`,background:"#07070e"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"8px",padding:"10px 16px",borderBottom:`1px solid ${C.bord}`,background:"#07070e",flexWrap:"wrap"}}>
             <span style={{fontSize:"10px",color:C.text3,letterSpacing:"2px",fontWeight:"600"}}>PERIOD:</span>
             {["daily","weekly","monthly","annual"].map(v=>(
               <button key={v} onClick={()=>setView(v)} style={{padding:"6px 14px",background:view===v?"#00ff9d":"transparent",border:`1px solid ${view===v?"#00ff9d":C.bord2}`,color:view===v?"#000":C.text2,cursor:"pointer",fontSize:"10px",letterSpacing:"2px",borderRadius:"3px",fontWeight:view===v?"bold":"normal"}}>
                 {v.toUpperCase()}
               </button>
             ))}
+            <button onClick={downloadCSV} title={`Download ${view} data as CSV`} style={{marginLeft:"auto",padding:"6px 14px",background:"transparent",border:`1px solid ${C.bord2}`,color:C.text3,cursor:"pointer",fontSize:"10px",letterSpacing:"1px",borderRadius:"3px",display:"flex",alignItems:"center",gap:"6px"}}>
+              ⬇ CSV
+            </button>
             {!liveData && (
-              <span onClick={()=>setTab("sync")} style={{marginLeft:"auto",fontSize:"10px",color:"#fbbf24",cursor:"pointer",letterSpacing:"1px"}}>
+              <span onClick={()=>setTab("sync")} style={{fontSize:"10px",color:"#fbbf24",cursor:"pointer",letterSpacing:"1px"}}>
                 ⚡ CONNECT APPLE HEALTH
               </span>
             )}
