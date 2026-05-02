@@ -806,83 +806,157 @@ export default function App() {
     } catch(e) { setJsonError("Invalid JSON — copy the Dictionary text from your Shortcut and paste it here."); }
   };
 
-  // Build full 30-day history table — ALL metrics, sent to every coach.
-  // Sleep affects workouts. Protein affects recovery. Steps affect fat loss.
-  // Every coach needs the complete picture to give accurate coaching.
+  // Build complete 30-day history — every non-null field for every day.
+  // One structured block per day so the AI has the full picture.
   const buildHistory = useCallback((coachId) => {
     const hist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
     if (!hist.length) return "";
-    const n   = (v, dec=0) => (v===null||v===undefined||isNaN(Number(v))) ? "—" : dec ? Number(v).toFixed(dec) : Math.round(Number(v));
-    const lp  = (s, w) => String(s).padEnd(w).slice(0, w);
-    const rp  = (s, w) => String(s).padStart(w).slice(-w);
+    const f1  = v => (v===null||v===undefined||isNaN(Number(v))) ? null : Number(v).toFixed(1);
+    const fi  = v => (v===null||v===undefined||isNaN(Number(v))) ? null : String(Math.round(Number(v)));
     const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
 
-    // ── 30-day aggregate summaries (one per domain) ──
-    const wtArr   = hist.filter(h=>h.weight).map(h=>Number(h.weight));
-    const bfArr   = hist.filter(h=>h.bodyFat).map(h=>Number(h.bodyFat));
-    const leArr   = hist.filter(h=>h.leanMass).map(h=>Number(h.leanMass));
-    const scArr   = hist.filter(h=>h.sleepScore).map(h=>Number(h.sleepScore));
-    const durArr  = hist.filter(h=>h.sleepDur).map(h=>Number(h.sleepDur));
-    const deepArr = hist.filter(h=>h.deepSleep).map(h=>Number(h.deepSleep));
-    const remArr  = hist.filter(h=>h.remSleep).map(h=>Number(h.remSleep));
-    const hrvArr  = hist.filter(h=>h.hrv).map(h=>Number(h.hrv));
-    const rdyArr  = hist.filter(h=>h.readiness).map(h=>Number(h.readiness));
-    const calArr  = hist.filter(h=>h.calories).map(h=>Number(h.calories));
-    const proArr  = hist.filter(h=>h.protein).map(h=>Number(h.protein));
-    const stpArr  = hist.filter(h=>h.steps).map(h=>Number(h.steps));
-    const volArr  = hist.filter(h=>h.workoutVol&&h.workoutVol>0).map(h=>Number(h.workoutVol));
-    const workouts = hist.filter(h=>h.workoutType&&h.workoutType!=="Rest");
+    // ── 30-day aggregate stats ──────────────────────────────────────────────
+    const pull  = (key) => hist.map(h=>h[key]).filter(v=>v!==null&&v!==undefined&&!isNaN(Number(v))).map(Number);
+    const wtArr = pull("weight"), bfArr = pull("bodyFat"), leArr = pull("leanMass");
     const mgVol = {Chest:0,Back:0,Shoulders:0,Biceps:0,Triceps:0,Legs:0,Core:0};
     hist.forEach(h=>{ for(const mg of Object.keys(mgVol)){ const k="vol"+mg; if(h[k]) mgVol[mg]+=Number(h[k]); }});
     const mgStr = Object.entries(mgVol).filter(([,v])=>v>0).map(([k,v])=>`${k}:${Math.round(v).toLocaleString()}`).join(" | ");
+    const wkCnt = hist.filter(h=>h.workoutType&&h.workoutType!=="Rest").length;
 
-    const summaries = [
-      `BODY:      Weight ${wtArr.length?wtArr[wtArr.length-1].toFixed(1):"—"}→${wtArr.length?wtArr[0].toFixed(1):"—"} lbs | BF% ${bfArr.length?bfArr[bfArr.length-1].toFixed(1):"—"}→${bfArr.length?bfArr[0].toFixed(1):"—"}% | Lean ${leArr.length?leArr[leArr.length-1].toFixed(1):"—"}→${leArr.length?leArr[0].toFixed(1):"—"} lbs (oldest→newest)`,
-      `SLEEP:     Avg score ${avg(scArr)}/100 (best ${scArr.length?Math.max(...scArr):"—"}, worst ${scArr.length?Math.min(...scArr):"—"}) | Avg ${avg(durArr)}h total | Avg deep ${avg(deepArr)}h | Avg REM ${avg(remArr)}h`,
-      `RECOVERY:  Avg HRV ${avg(hrvArr)}ms (best ${hrvArr.length?Math.max(...hrvArr):"—"}, worst ${hrvArr.length?Math.min(...hrvArr):"—"}) | Avg Readiness ${avg(rdyArr)}/100`,
-      `NUTRITION: Avg ${avg(calArr)} kcal/day | Avg protein ${avg(proArr)}g/day | Days tracked ${calArr.length}/30`,
-      `ACTIVITY:  Avg ${Math.round(avg(stpArr)).toLocaleString()} steps/day`,
-      `TRAINING:  ${workouts.length} workouts in 30 days | Avg vol ${volArr.length?Math.round(avg(volArr)).toLocaleString():"—"} lbs`,
-      mgStr ? `MUSCLE VOL (30d lbs): ${mgStr}` : null,
+    const stats = [
+      `BODY COMP:  Weight ${wtArr.length?wtArr[wtArr.length-1].toFixed(1):"—"}→${wtArr.length?wtArr[0].toFixed(1):"—"} lbs | BF ${bfArr.length?bfArr[bfArr.length-1].toFixed(1):"—"}→${bfArr.length?bfArr[0].toFixed(1):"—"}% | Lean ${leArr.length?leArr[leArr.length-1].toFixed(1):"—"}→${leArr.length?leArr[0].toFixed(1):"—"} lbs (oldest→newest)`,
+      `SLEEP:      Avg score ${avg(pull("sleepScore"))}/100 | Avg ${avg(pull("sleepDur"))}h | Avg deep ${avg(pull("deepSleep"))}h | Avg REM ${avg(pull("remSleep"))}h`,
+      `RECOVERY:   Avg HRV ${avg(pull("hrv"))}ms (best ${pull("hrv").length?Math.max(...pull("hrv")):"—"}, worst ${pull("hrv").length?Math.min(...pull("hrv")):"—"}) | Avg Readiness ${avg(pull("readiness"))}/100`,
+      `NUTRITION:  Avg ${avg(pull("calories"))} kcal | Avg protein ${avg(pull("protein"))}g | Avg carbs ${avg(pull("carbs"))}g | Avg fat ${avg(pull("fat"))}g`,
+      `ACTIVITY:   Avg ${Math.round(Number(avg(pull("steps")))||0).toLocaleString()} steps/day | Avg ${avg(pull("calsBurned"))} kcal burned`,
+      `TRAINING:   ${wkCnt} workouts in 30 days | Avg vol ${avg(pull("workoutVol").filter(v=>v>0))} lbs/session`,
+      mgStr ? `MUSCLE VOL: ${mgStr}` : null,
     ].filter(Boolean).join("\n");
 
-    // ── Full daily table — every coach gets all columns ──
-    const hdr = "DATE         WT    BF%  SLEEP HRV RDY  CALS  PRO  STEPS   WORKOUT      VOL(lbs) SETS MUSCLE GROUPS";
-    const sep = "─".repeat(hdr.length);
-    const rows = hist.map(h => [
-      lp(h.syncDate||"—", 12),
-      rp((h.weight?Number(h.weight).toFixed(1):"—"), 5),
-      rp((h.bodyFat?Number(h.bodyFat).toFixed(1)+"%":"—"), 5),
-      rp(n(h.sleepScore), 6),
-      rp(n(h.hrv), 4),
-      rp(n(h.readiness), 4),
-      rp(n(h.calories), 5),
-      rp(n(h.protein)+"g", 4),
-      rp((h.steps?Math.round(Number(h.steps)).toLocaleString():"—"), 7),
-      "  "+lp(h.workoutType||"Rest", 12),
-      rp((h.workoutVol&&h.workoutVol>0?Math.round(Number(h.workoutVol)).toLocaleString():"—"), 8),
-      rp(n(h.fitbodSets), 5),
-      "  "+(h.fitbodMuscleGroups||"—"),
-    ].join("")).join("\n");
+    // ── Per-day full data blocks ────────────────────────────────────────────
+    // Every non-null field is emitted; fields are grouped by source for readability
+    const dayBlocks = hist.map(h => {
+      const lines = [`▸ ${h.syncDate||"unknown date"}`];
 
-    // Coach-specific focus note so the AI knows what lens to apply
+      // Body composition
+      const body = [
+        h.weight     ? `weight:${f1(h.weight)}lbs`       : null,
+        h.bodyFat    ? `bodyFat:${f1(h.bodyFat)}%`        : null,
+        h.leanMass   ? `lean:${f1(h.leanMass)}lbs`        : null,
+        h.fatMass    ? `fatMass:${f1(h.fatMass)}lbs`      : null,
+        h.muscleMass ? `muscle:${f1(h.muscleMass)}lbs`    : null,
+        h.bmi        ? `bmi:${f1(h.bmi)}`                 : null,
+        h.visceralFat? `viscFat:${fi(h.visceralFat)}`     : null,
+        h.bmr        ? `bmr:${fi(h.bmr)}kcal`             : null,
+        h.metabolicAge?`metAge:${fi(h.metabolicAge)}yrs`  : null,
+      ].filter(Boolean);
+      if (body.length) lines.push(`  BODY:      ${body.join(" | ")}`);
+
+      // Segmental fat
+      const seg = [
+        h.trunkFat    ? `trunk:${f1(h.trunkFat)}%`        : null,
+        h.rightArmFat ? `rArm:${f1(h.rightArmFat)}%`      : null,
+        h.leftArmFat  ? `lArm:${f1(h.leftArmFat)}%`       : null,
+        h.rightLegFat ? `rLeg:${f1(h.rightLegFat)}%`      : null,
+        h.leftLegFat  ? `lLeg:${f1(h.leftLegFat)}%`       : null,
+        h.trunkMuscle    ? `trunkMuscle:${f1(h.trunkMuscle)}lbs`       : null,
+        h.rightArmMuscle ? `rArmMuscle:${f1(h.rightArmMuscle)}lbs`     : null,
+        h.leftArmMuscle  ? `lArmMuscle:${f1(h.leftArmMuscle)}lbs`      : null,
+        h.rightLegMuscle ? `rLegMuscle:${f1(h.rightLegMuscle)}lbs`     : null,
+        h.leftLegMuscle  ? `lLegMuscle:${f1(h.leftLegMuscle)}lbs`      : null,
+      ].filter(Boolean);
+      if (seg.length) lines.push(`  SEGMENTAL: ${seg.join(" | ")}`);
+
+      // Sleep & recovery
+      const sleep = [
+        h.sleepScore    ? `score:${fi(h.sleepScore)}/100`      : null,
+        h.sleepDur      ? `dur:${f1(h.sleepDur)}h`             : null,
+        h.deepSleep     ? `deep:${f1(h.deepSleep)}h`           : null,
+        h.remSleep      ? `rem:${f1(h.remSleep)}h`             : null,
+        h.lightSleep    ? `light:${f1(h.lightSleep)}h`         : null,
+        h.hrv           ? `hrv:${fi(h.hrv)}ms`                 : null,
+        h.restingHR     ? `rhr:${fi(h.restingHR)}bpm`          : null,
+        h.readiness     ? `readiness:${fi(h.readiness)}/100`   : null,
+        h.respiratoryRate?`respRate:${f1(h.respiratoryRate)}`  : null,
+        h.spo2          ? `spo2:${f1(h.spo2)}%`               : null,
+        h.sleepingWristTemp?`wristTemp:${f1(h.sleepingWristTemp)}°C`: null,
+      ].filter(Boolean);
+      if (sleep.length) lines.push(`  SLEEP:     ${sleep.join(" | ")}`);
+
+      // Nutrition
+      const nutr = [
+        h.calories    ? `cals:${fi(h.calories)}kcal`       : null,
+        h.protein     ? `protein:${fi(h.protein)}g`        : null,
+        h.carbs       ? `carbs:${fi(h.carbs)}g`            : null,
+        h.fat         ? `fat:${fi(h.fat)}g`                : null,
+        h.fiber       ? `fiber:${fi(h.fiber)}g`            : null,
+        h.sugar       ? `sugar:${fi(h.sugar)}g`            : null,
+        h.saturatedFat? `satFat:${fi(h.saturatedFat)}g`    : null,
+        h.sodium      ? `sodium:${fi(h.sodium)}mg`         : null,
+        h.potassium   ? `potassium:${fi(h.potassium)}mg`   : null,
+        h.water       ? `water:${f1(h.water)}L`            : null,
+      ].filter(Boolean);
+      if (nutr.length) lines.push(`  NUTRITION: ${nutr.join(" | ")}`);
+
+      // Activity
+      const act = [
+        h.steps          ? `steps:${Math.round(Number(h.steps)).toLocaleString()}` : null,
+        h.calsBurned     ? `burned:${fi(h.calsBurned)}kcal`     : null,
+        h.activeMins     ? `activeMins:${fi(h.activeMins)}`     : null,
+        h.avgHR          ? `avgHR:${fi(h.avgHR)}bpm`            : null,
+        h.standHours     ? `stand:${fi(h.standHours)}hrs`       : null,
+        h.flightsClimbed ? `flights:${fi(h.flightsClimbed)}`    : null,
+        h.vo2max         ? `vo2max:${f1(h.vo2max)}`             : null,
+      ].filter(Boolean);
+      if (act.length) lines.push(`  ACTIVITY:  ${act.join(" | ")}`);
+
+      // Training
+      const trn = [
+        h.workoutType        ? `type:${h.workoutType}`                      : null,
+        h.workoutVol>0       ? `vol:${Math.round(Number(h.workoutVol)).toLocaleString()}lbs` : null,
+        h.workoutDur         ? `dur:${fi(h.workoutDur)}min`                 : null,
+        h.fitbodSets         ? `sets:${fi(h.fitbodSets)}`                   : null,
+        h.fitbodWorkingSets  ? `workSets:${fi(h.fitbodWorkingSets)}`        : null,
+        h.fitbodTotalReps    ? `reps:${fi(h.fitbodTotalReps)}`              : null,
+        h.fitbodExerciseCount? `exercises:${fi(h.fitbodExerciseCount)}`     : null,
+        h.fitbodMaxWeightLbs ? `maxWeight:${f1(h.fitbodMaxWeightLbs)}lbs`  : null,
+        h.fitbodMuscleGroups ? `muscleGroups:${h.fitbodMuscleGroups}`       : null,
+      ].filter(Boolean);
+      if (trn.length) lines.push(`  TRAINING:  ${trn.join(" | ")}`);
+
+      // Per-muscle-group volume (only show groups with data)
+      const mgLine = [
+        ["Chest",     h.volChest,     h.repsChest,     h.setsChest,     h.maxChest],
+        ["Back",      h.volBack,      h.repsBack,       h.setsBack,      h.maxBack],
+        ["Shoulders", h.volShoulders, h.repsShoulders,  h.setsShoulders, h.maxShoulders],
+        ["Biceps",    h.volBiceps,    h.repsBiceps,     h.setsBiceps,    h.maxBiceps],
+        ["Triceps",   h.volTriceps,   h.repsTriceps,    h.setsTriceps,   h.maxTriceps],
+        ["Legs",      h.volLegs,      h.repsLegs,       h.setsLegs,      h.maxLegs],
+        ["Core",      h.volCore,      h.repsCore,       h.setsCore,      h.maxCore],
+      ].filter(([,vol])=>vol>0).map(([mg,vol,reps,sets,max])=>
+        `${mg}[vol:${Math.round(vol).toLocaleString()}lbs${reps?` reps:${reps}`:""}${sets?` sets:${sets}`:""}${max?` max:${max}lbs`:""}]`
+      ).join(" ");
+      if (mgLine) lines.push(`  MG VOLUME: ${mgLine}`);
+
+      return lines.join("\n");
+    }).join("\n");
+
+    // Coach-specific focus note
     const focus = {
-      workout:  "COACHING FOCUS: Use ALL data — recovery (HRV/sleep/readiness) dictates today's intensity. Nutrition (protein/cals) affects muscle retention. Training history reveals weak muscle groups and volume trends.",
-      food:     "COACHING FOCUS: Use ALL data — training days need more protein/carbs. Poor sleep days may drive cravings. Steps + cals burned determine deficit. Body weight trend validates caloric approach.",
-      sleep:    "COACHING FOCUS: Use ALL data — training load and volume affect sleep architecture. Caloric deficit impacts sleep quality. Steps/activity affect readiness. Body fat affects hormones and sleep depth.",
-      progress: "COACHING FOCUS: Use ALL data — every metric contributes to the 10% BF goal. Identify correlations: which behaviors drive the best body composition changes?",
+      workout:  "COACHING FOCUS: Recovery (HRV/sleep/readiness) sets today's intensity ceiling. Protein + calories determine muscle retention. Training history and per-muscle-group volume reveal what needs priority.",
+      food:     "COACHING FOCUS: Training days need higher carbs/protein. Sleep quality correlates with cravings and adherence. Steps + cals burned determine the deficit. Body weight and BF% trend validate the plan.",
+      sleep:    "COACHING FOCUS: Training volume and timing affect sleep architecture. Caloric deficit depth impacts sleep quality. Body fat % affects hormones and deep sleep. Identify what behaviors preceded best/worst nights.",
+      progress: "COACHING FOCUS: Every metric feeds the 10% BF goal. Find the correlations — what combinations of sleep, nutrition, training, and recovery produce the fastest body recomposition?",
     };
 
-    return `━━ 30-DAY COMPLETE BIOMETRIC HISTORY ━━
+    return `━━ COMPLETE 30-DAY BIOMETRIC DATA ━━
 ${focus[coachId]||focus.progress}
 
-30-DAY AVERAGES & TRENDS:
-${summaries}
+30-DAY SUMMARY STATS:
+${stats}
 
-${sep}
-${hdr}
-${sep}
-${rows}`;
+━━ DAILY DETAIL (newest first) ━━
+${dayBlocks}`;
   }, [liveHistory]);
 
   // ctx(coachId) — today's snapshot + 30-day coach-specific history table
