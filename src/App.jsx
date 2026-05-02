@@ -1106,7 +1106,16 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
       sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
-      defaultDailyPrompt:"Analyze my last 30 days of training data and recovery metrics. Identify: (1) which muscle groups are under-trained based on volume trends, (2) how my HRV and readiness have trended and what that means for today's intensity, (3) any patterns between sleep quality and workout performance. Then give me today's exact workout — warm-up → main lifts (sets×reps×load) → accessories → finisher — calibrated to my current recovery state. Be specific with numbers pulled directly from my data.",
+      defaultDailyPrompt:`Analyze ALL of my data — training history, body composition, recovery (HRV, sleep, readiness), nutrition, and activity — then build me the optimal 1–4 week workout plan to maximize muscle growth and accelerate body fat reduction toward 10%.
+
+Structure your response as:
+1. DATA ANALYSIS: What does my last 30 days of training tell you? Which muscle groups are lagging in volume? How is my recovery trending? What patterns exist between my sleep/HRV and workout performance?
+2. PROGRAM DESIGN: A complete week-by-week plan (1–4 weeks) with exact days, workout types (Push/Pull/Legs/Core), exercises, sets×reps×load, tempo, and rest periods. Periodize intelligently based on my volume history.
+3. MUSCLE GROUP PRIORITY: Based on my per-muscle-group volume data, which areas need the most attention and how does the plan address that?
+4. RECOVERY PROTOCOL: How should I structure rest days, deload weeks, and active recovery given my HRV and readiness patterns?
+5. TODAY'S WORKOUT: Regardless of the full plan, give me exactly what to do today based on my current recovery state.
+
+Be specific — reference my actual numbers, not generic advice.`,
       questions:[
         {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
         {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
@@ -1117,7 +1126,16 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"food", icon:"🥗", name:"FOOD COACH", col:"#34d399",
       sys:"You are an elite sports nutritionist and registered dietitian specializing in whole food plant-powered vegan athletes targeting body recomposition. You design meal plans that maximize protein (180g+), optimize macros for fat loss, and use real whole foods — not processed fake meats. Be specific with foods, portions, calories, and macros per meal.",
-      defaultDailyPrompt:"Analyze my last 30 days of nutrition data. Tell me: (1) my average protein vs my 180g+ target and how many days I hit it, (2) whether my caloric intake is producing the expected weight trend, (3) the biggest nutrition gaps hurting my body recomposition. Then give me exactly what to eat today — all meals and snacks with exact foods, portions, calories, protein, carbs, fat. Whole food plant-powered vegan only. Make the plan fix the specific gaps you found in my data.",
+      defaultDailyPrompt:`Analyze ALL of my data — nutrition history, body composition trend, training load, activity, sleep, and recovery — then build me the optimal daily macro eating plan to hit 10% body fat while preserving maximum lean muscle.
+
+Structure your response as:
+1. DATA ANALYSIS: What does my last 30 days of nutrition tell you? How is my caloric intake tracking against my body weight trend? How often am I hitting protein targets? Where are the biggest macro gaps?
+2. MACRO TARGETS: Based on my current stats (weight, body fat %, lean mass, activity level, training volume), calculate my exact daily targets for calories, protein, carbs, and fat. Show your math.
+3. DAILY MACRO PLAN: Break out the macros across every meal — breakfast, lunch, dinner, and snacks — with exact grams of protein, carbs, and fat per meal. Build it around whole food plant-powered vegan foods only (legumes, tofu, tempeh, seitan, quinoa, edamame, lentils — no processed fake meats).
+4. MEAL TIMING: Based on my training schedule and sleep data, recommend when to eat each meal relative to my workouts for optimal performance and fat loss.
+5. BIGGEST NUTRITION LEVER: What is the single most impactful nutrition change I can make right now based on my data?
+
+Be specific — use my actual weight, BF%, and training data to calculate everything.`,
       questions:[
         {id:"today",label:"🍽️ TODAY'S MEALS",prompt:"Based on my current body comp, training schedule, and macro targets, give me exactly what to eat today. Specify breakfast, lunch, dinner, snacks with exact portions, calories, and macros. Total daily calories, protein (180g+), carbs, fats."},
         {id:"next7",label:"📅 NEXT 7 DAY MEAL PLAN",prompt:"Create a complete 7-day whole food plant-powered vegan meal plan optimized for fat loss and muscle preservation. Each day: breakfast, lunch, dinner, 2 snacks with exact foods, portions, calories, and macros. Target 180g+ protein daily in a caloric deficit. Use legumes, tofu, tempeh, seitan, quinoa, etc."},
@@ -1128,7 +1146,16 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"sleep", icon:"😴", name:"SLEEP COACH", col:"#a78bfa",
       sys:"You are an elite sleep performance coach who analyzes circadian rhythm, sleep architecture, HRV, and lifestyle factors. You help athletes optimize sleep for recovery, fat loss, and performance. Be specific about bedtime routines, environmental factors, nutrition timing, and lifestyle changes. Reference actual Oura data.",
-      defaultDailyPrompt:"Analyze my last 30 nights of sleep data. Find: (1) my average deep sleep and REM vs optimal targets and which nights were best/worst, (2) correlations between my behaviors (training volume, caloric intake, steps) and sleep quality — be specific with dates and numbers, (3) my HRV trend and what's driving it. Then give me tonight's exact sleep protocol: wind-down start time, bedtime, temperature, nutrition cutoff, and the single most impactful change I can make based on what you found in my data.",
+      defaultDailyPrompt:`Analyze ALL of my data — sleep architecture, HRV, readiness, nutrition (especially meal timing, calories, and macros), training load, steps, body composition, and recovery — then give me a complete plan to optimize my sleep quality.
+
+Structure your response as:
+1. SLEEP DATA ANALYSIS: What are my average sleep score, total duration, deep sleep, and REM over the last 30 days vs optimal targets? Which nights were best and worst — and what was different about those days?
+2. CORRELATION ANALYSIS: Using the actual dates and numbers from my data, identify what is hurting my sleep. Cross-reference: Does heavy training suppress deep sleep? Does eating late reduce sleep score? Does high caloric intake affect HRV? Does low step count correlate with worse readiness? Be specific with dates.
+3. MEAL TIMING IMPACT: Based on my nutrition and sleep data together, what time should I have my last meal, last carbs, and last protein to optimize sleep quality and recovery?
+4. SLEEP IMPROVEMENT PLAN: Give me a specific, prioritized list of changes to make — ranked by expected impact based on what my data shows.
+5. TONIGHT'S PROTOCOL: Exact wind-down start time, bedtime, room temperature, last meal cutoff, caffeine cutoff, and any other specific actions for tonight.
+
+Reference my actual numbers — tell me what my data says, not generic sleep hygiene advice.`,
       questions:[
         {id:"today",label:"🌙 TONIGHT'S PROTOCOL",prompt:"Based on my recent sleep data (duration, deep/REM/light, HRV, readiness) and today's activities, give me an exact protocol for tonight: wind-down routine start time, bedtime, temperature, supplements, nutrition cutoff, blue light cutoff. Target optimal deep and REM sleep."},
         {id:"next7",label:"📅 NEXT 7 DAY SLEEP PLAN",prompt:"Analyze my sleep patterns and create a 7-day plan to improve sleep quality and HRV. Identify the biggest limiters (late meals, stress, training timing, inconsistent bedtime) and give specific daily changes. Target 8+ hours, 1.5+ deep, 1.5+ REM."},
@@ -1139,7 +1166,17 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"progress", icon:"🏆", name:"PROGRESS COACH", col:"#f43f5e",
       sys:"You are an elite mindset coach and body recomposition psychologist. You motivate, inspire, and hold athletes accountable to their goals while celebrating wins and reframing setbacks. Be direct, data-driven, and emotionally intelligent. Reference specific achievements from the client's historical data to build momentum. The client's goal is 10% body fat.",
-      defaultDailyPrompt:"Analyze all 30 days of my data across every metric — body composition, sleep, nutrition, training, recovery. Give me: (1) my top 3 measurable wins with exact numbers and dates, (2) the single biggest lever that would accelerate my progress to 10% body fat based on what the data actually shows is holding me back, (3) my projected timeline to 14%, 12%, and 10% body fat at my current pace. Then give me 3 specific, non-negotiable commitments for today. Be direct — use my actual numbers, not generic advice.",
+      defaultDailyPrompt:`Analyze ALL of my data across every dimension — body composition, training, nutrition, sleep, recovery, activity — then give me a complete action plan to hit 10% body fat as fast as possible while maximizing muscle retention.
+
+Structure your response as:
+1. FULL DATA ANALYSIS: Review every metric over the last 30 days. Where am I improving? Where am I stalling? What does my body composition trend actually show?
+2. WHAT'S WORKING: My top 3 measurable wins from the data with exact numbers and dates.
+3. WHAT'S HOLDING ME BACK: The top 3 things the data shows are limiting my progress — be specific with numbers, not generic.
+4. PRIORITY CHANGES: Ranked list of the highest-impact changes I need to make right now across training, nutrition, sleep, and recovery — ordered by expected impact on reaching 10% body fat.
+5. TIMELINE PROJECTION: Based on my current body fat %, rate of change over the last 30 days, and recommended adjustments — when will I realistically hit 14%, 12%, and 10% body fat?
+6. THIS WEEK'S COMMITMENTS: 5 specific, measurable, non-negotiable actions for this week — one for training, one for nutrition, one for sleep, one for recovery, one wildcard — each tied directly to a gap found in my data.
+
+Be brutally honest and data-driven. I want the truth from my numbers, not motivation.`,
       questions:[
         {id:"today",label:"🔥 DAILY MOTIVATION",prompt:"Give me today's motivational brief. Acknowledge what I've achieved (reference specific data milestones), identify today's key focus area, and give me 3 actionable commitments for today that will move the needle toward 10% body fat."},
         {id:"wins",label:"🏅 MY WINS THIS MONTH",prompt:"Analyze my data and call out every measurable win from the past 30 days — body comp changes, training PRs, consistency streaks, sleep improvements. Make me feel the progress I've made. Be specific with numbers."},
