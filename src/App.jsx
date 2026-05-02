@@ -990,12 +990,87 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   },[today,manual,liveData,buildHistory]);
 
   const [claudeKey,setClaudeKey]=useState(()=>localStorage.getItem("bt_claude_key")||"");
-  const callClaude = async (sys,prompt,content) => {
+  // Generate a complete CSV of all 30-day data — every field, every source.
+  // Used as a document attachment for Claude and embedded as text for other LLMs.
+  const buildCSV30 = useCallback(() => {
+    const hist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
+    const FIELDS = [
+      // Identity
+      {k:"syncDate",l:"Date"},{k:"dow",l:"Day of Week"},
+      // Body composition (Hume)
+      {k:"weight",l:"Weight (lbs)"},{k:"bodyFat",l:"Body Fat %"},{k:"leanMass",l:"Lean Mass (lbs)"},
+      {k:"fatMass",l:"Fat Mass (lbs)"},{k:"muscleMass",l:"Muscle Mass (lbs)"},{k:"muscleRate",l:"Muscle Rate %"},
+      {k:"bmi",l:"BMI"},{k:"visceralFat",l:"Visceral Fat"},{k:"subcutaneousFat",l:"Subcutaneous Fat"},
+      {k:"boneMass",l:"Bone Mass (lbs)"},{k:"proteinMass",l:"Protein Mass (lbs)"},
+      {k:"moisture",l:"Body Water %"},{k:"bmr",l:"BMR (kcal)"},{k:"metabolicAge",l:"Metabolic Age (yrs)"},
+      // Segmental fat (Hume)
+      {k:"trunkFat",l:"Trunk Fat %"},{k:"rightArmFat",l:"Right Arm Fat %"},
+      {k:"leftArmFat",l:"Left Arm Fat %"},{k:"rightLegFat",l:"Right Leg Fat %"},{k:"leftLegFat",l:"Left Leg Fat %"},
+      // Segmental muscle (Hume)
+      {k:"trunkMuscle",l:"Trunk Muscle (lbs)"},{k:"rightArmMuscle",l:"Right Arm Muscle (lbs)"},
+      {k:"leftArmMuscle",l:"Left Arm Muscle (lbs)"},{k:"rightLegMuscle",l:"Right Leg Muscle (lbs)"},{k:"leftLegMuscle",l:"Left Leg Muscle (lbs)"},
+      // Sleep & recovery (Oura)
+      {k:"sleepScore",l:"Sleep Score (/100)"},{k:"sleepDur",l:"Sleep Duration (h)"},
+      {k:"deepSleep",l:"Deep Sleep (h)"},{k:"remSleep",l:"REM Sleep (h)"},{k:"lightSleep",l:"Light Sleep (h)"},
+      {k:"hrv",l:"HRV (ms)"},{k:"restingHR",l:"Resting HR (bpm)"},{k:"readiness",l:"Readiness (/100)"},
+      {k:"respiratoryRate",l:"Respiratory Rate"},{k:"spo2",l:"SpO2 %"},{k:"sleepingWristTemp",l:"Wrist Temp (deg C)"},
+      // Nutrition (MyFitnessPal)
+      {k:"calories",l:"Calories (kcal)"},{k:"protein",l:"Protein (g)"},{k:"carbs",l:"Carbs (g)"},
+      {k:"fat",l:"Fat (g)"},{k:"fiber",l:"Fiber (g)"},{k:"sugar",l:"Sugar (g)"},
+      {k:"saturatedFat",l:"Saturated Fat (g)"},{k:"sodium",l:"Sodium (mg)"},{k:"potassium",l:"Potassium (mg)"},
+      {k:"calcium",l:"Calcium (mg)"},{k:"iron",l:"Iron (mg)"},{k:"vitaminC",l:"Vitamin C (mg)"},
+      {k:"water",l:"Water (L)"},
+      // Activity (Apple Health)
+      {k:"steps",l:"Steps"},{k:"calsBurned",l:"Cals Burned (kcal)"},{k:"activeMins",l:"Active Mins"},
+      {k:"avgHR",l:"Avg Heart Rate (bpm)"},{k:"standHours",l:"Stand Hours"},
+      {k:"flightsClimbed",l:"Flights Climbed"},{k:"vo2max",l:"VO2 Max"},
+      // Training (Fitbod)
+      {k:"workoutType",l:"Workout Type"},{k:"workoutVol",l:"Total Volume (lbs)"},
+      {k:"workoutDur",l:"Duration (min)"},{k:"fitbodSets",l:"Total Sets"},
+      {k:"fitbodWorkingSets",l:"Working Sets"},{k:"fitbodWarmupSets",l:"Warmup Sets"},
+      {k:"fitbodTotalReps",l:"Total Reps"},{k:"fitbodExerciseCount",l:"Exercise Count"},
+      {k:"fitbodMaxWeightLbs",l:"Max Weight (lbs)"},{k:"fitbodMuscleGroups",l:"Muscle Groups"},
+      // Per-muscle volume (Fitbod)
+      {k:"volChest",l:"Chest Vol (lbs)"},{k:"repsChest",l:"Chest Reps"},{k:"setsChest",l:"Chest Sets"},{k:"maxChest",l:"Chest Max (lbs)"},
+      {k:"volBack",l:"Back Vol (lbs)"},{k:"repsBack",l:"Back Reps"},{k:"setsBack",l:"Back Sets"},{k:"maxBack",l:"Back Max (lbs)"},
+      {k:"volShoulders",l:"Shoulders Vol (lbs)"},{k:"repsShoulders",l:"Shoulders Reps"},{k:"setsShoulders",l:"Shoulders Sets"},{k:"maxShoulders",l:"Shoulders Max (lbs)"},
+      {k:"volBiceps",l:"Biceps Vol (lbs)"},{k:"repsBiceps",l:"Biceps Reps"},{k:"setsBiceps",l:"Biceps Sets"},{k:"maxBiceps",l:"Biceps Max (lbs)"},
+      {k:"volTriceps",l:"Triceps Vol (lbs)"},{k:"repsTriceps",l:"Triceps Reps"},{k:"setsTriceps",l:"Triceps Sets"},{k:"maxTriceps",l:"Triceps Max (lbs)"},
+      {k:"volLegs",l:"Legs Vol (lbs)"},{k:"repsLegs",l:"Legs Reps"},{k:"setsLegs",l:"Legs Sets"},{k:"maxLegs",l:"Legs Max (lbs)"},
+      {k:"volCore",l:"Core Vol (lbs)"},{k:"repsCore",l:"Core Reps"},{k:"setsCore",l:"Core Sets"},{k:"maxCore",l:"Core Max (lbs)"},
+    ];
+    const esc = v => { if(v===null||v===undefined) return ""; const s=String(v); return (s.includes(",")||s.includes('"')||s.includes("\n"))?`"${s.replace(/"/g,'""')}"`:`s`; };
+    const header = FIELDS.map(f=>f.l).join(",");
+    const rows = hist.map(h => FIELDS.map(f => { const v=h[f.k]; return (v===null||v===undefined)?"":String(v); }).join(","));
+    return [header,...rows].join("\n");
+  }, [liveHistory]);
+
+  // callClaude: when csvData is provided, sends it as a proper document attachment
+  // so Claude can reference it as a structured file (not just text in the prompt).
+  const callClaude = async (sys, prompt, csvData) => {
     const key = claudeKey;
     if(!key) throw new Error("Enter your Anthropic API key in the AI Coach tab to enable Claude");
-    const msgs = content ? [{role:"user",content}] : [{role:"user",content:prompt}];
-    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,messages:msgs})});
+    let userContent;
+    if (csvData) {
+      // Encode CSV as base64 for document attachment
+      const bytes = new TextEncoder().encode(csvData);
+      const binStr = Array.from(bytes, b => String.fromCharCode(b)).join("");
+      const b64 = btoa(binStr);
+      userContent = [
+        {
+          type: "document",
+          source: { type: "base64", media_type: "text/plain", data: b64 },
+          title: "BioTrack — Last 30 Days Complete Biometric Data",
+          context: "All sources: Hume Body Pod (body comp + segmental fat/muscle), Oura Ring (sleep + HRV + readiness), MyFitnessPal (nutrition), Apple Health (activity + steps), Fitbod (training + per-muscle-group volume). Goal: minimize body fat to 10%, preserve lean mass. Vegan athlete.",
+        },
+        { type: "text", text: prompt },
+      ];
+    } else {
+      userContent = prompt;
+    }
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,messages:[{role:"user",content:userContent}]})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.content[0].text;
   };
   const callGPT = async (sys,prompt,key) => {
@@ -1082,10 +1157,18 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const sys = coach.sys;
     try {
       let res;
-      const dataCtx = ctx(coachId);
-      if(llmId==="claude") res=await callClaude(sys,`${promptText}\n\n${dataCtx}`);
-      else if(llmId==="gpt4"&&apiKeys.gpt4) res=await callGPT(sys,`${promptText}\n\n${dataCtx}`,apiKeys.gpt4);
-      else res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
+      const todaySnap = ctx(coachId); // today's full snapshot text
+      const histText  = buildHistory(coachId); // 30-day structured text (for non-Claude LLMs)
+      const csv30     = buildCSV30();           // 30-day CSV (attached as document for Claude)
+      if(llmId==="claude") {
+        // Claude gets today's snapshot as text + full 30-day CSV as a document attachment
+        res=await callClaude(sys,`${promptText}\n\n${todaySnap}`, csv30);
+      } else if(llmId==="gpt4"&&apiKeys.gpt4) {
+        // GPT-4 gets everything embedded as text (no file attachment in chat completions API)
+        res=await callGPT(sys,`${promptText}\n\n${todaySnap}\n\n${histText}`,apiKeys.gpt4);
+      } else {
+        res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
+      }
       setAnalyses(p=>({...p,[qKey]:res}));
     } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
     setLoading(p=>({...p,[qKey]:false}));
@@ -1094,10 +1177,9 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   const getWorkout = async () => {
     setLoading(p=>({...p,workout:true}));
     try {
-      const recent=DEMO.slice(0,7).map(x=>`${x.date} ${x.workoutType}`).join(", ");
       const r=await callClaude(
         "You are an elite strength coach for fat loss. Prescribe today's exact workout: Warm-Up → Main → Accessory → Finisher. Include exercises, sets×reps, load, tempo, rest.",
-        `Readiness: ${today.readiness}/100 | HRV: ${today.hrv}ms | Sleep: ${today.sleepScore}/100\nRecent: ${recent}\n${ctx("workout")}`
+        `${ctx("workout")}`, buildCSV30()
       );
       setWorkout(r);
     } catch(e){setWorkout(`⚠ ${e.message}`);}
