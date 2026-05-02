@@ -806,112 +806,83 @@ export default function App() {
     } catch(e) { setJsonError("Invalid JSON — copy the Dictionary text from your Shortcut and paste it here."); }
   };
 
-  // Build compact 30-day history table tailored to each coach
+  // Build full 30-day history table — ALL metrics, sent to every coach.
+  // Sleep affects workouts. Protein affects recovery. Steps affect fat loss.
+  // Every coach needs the complete picture to give accurate coaching.
   const buildHistory = useCallback((coachId) => {
     const hist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
     if (!hist.length) return "";
-    const n  = (v, dec=0) => (v===null||v===undefined) ? "—" : dec ? Number(v).toFixed(dec) : Math.round(Number(v));
-    const lp = (s, w) => String(s).padEnd(w).slice(0, w);
-    const rp = (s, w) => String(s).padStart(w).slice(-w);
+    const n   = (v, dec=0) => (v===null||v===undefined||isNaN(Number(v))) ? "—" : dec ? Number(v).toFixed(dec) : Math.round(Number(v));
+    const lp  = (s, w) => String(s).padEnd(w).slice(0, w);
+    const rp  = (s, w) => String(s).padStart(w).slice(-w);
+    const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
 
-    if (coachId === "workout") {
-      const hdr = "DATE         WORKOUT       VOL(lbs)  SETS  REPS  MAX(lbs)  HRV   RDY  SLEEP  MUSCLE GROUPS";
-      const sep = "─".repeat(hdr.length);
-      const rows = hist.map(h => [
-        lp(h.syncDate||"—", 12),
-        lp(h.workoutType||"Rest", 13),
-        rp(n(h.workoutVol), 8),
-        rp(n(h.fitbodSets), 5),
-        rp(n(h.fitbodTotalReps), 5),
-        rp(n(h.fitbodMaxWeightLbs), 9),
-        rp(n(h.hrv), 5),
-        rp(n(h.readiness), 5),
-        rp(n(h.sleepScore), 6),
-        "  "+(h.fitbodMuscleGroups||"—"),
-      ].join("")).join("\n");
-      // 30-day training summary
-      const workouts = hist.filter(h=>h.workoutType&&h.workoutType!=="Rest");
-      const avgHRV  = hist.filter(h=>h.hrv).map(h=>h.hrv);
-      const avgRdy  = hist.filter(h=>h.readiness).map(h=>h.readiness);
-      const volArr  = workouts.map(h=>h.workoutVol||0);
-      const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
-      const summary = `30D TRAINING SUMMARY: ${workouts.length} workouts | Avg vol ${Math.round(avg(volArr)).toLocaleString()} lbs | Avg HRV ${avg(avgHRV)} | Avg Readiness ${avg(avgRdy)}`;
-      // Per muscle group totals
-      const mgVol = {Chest:0,Back:0,Shoulders:0,Biceps:0,Triceps:0,Legs:0,Core:0};
-      hist.forEach(h=>{ for(const mg of Object.keys(mgVol)) { const k="vol"+mg; if(h[k]) mgVol[mg]+=h[k]; }});
-      const mgStr = Object.entries(mgVol).filter(([,v])=>v>0).map(([k,v])=>`${k}:${Math.round(v).toLocaleString()}`).join(" | ");
-      return `━━ 30-DAY TRAINING HISTORY ━━\n${summary}\nVOLUME BY MUSCLE GROUP (lbs): ${mgStr||"no data yet"}\n${sep}\n${hdr}\n${sep}\n${rows}`;
-    }
+    // ── 30-day aggregate summaries (one per domain) ──
+    const wtArr   = hist.filter(h=>h.weight).map(h=>Number(h.weight));
+    const bfArr   = hist.filter(h=>h.bodyFat).map(h=>Number(h.bodyFat));
+    const leArr   = hist.filter(h=>h.leanMass).map(h=>Number(h.leanMass));
+    const scArr   = hist.filter(h=>h.sleepScore).map(h=>Number(h.sleepScore));
+    const durArr  = hist.filter(h=>h.sleepDur).map(h=>Number(h.sleepDur));
+    const deepArr = hist.filter(h=>h.deepSleep).map(h=>Number(h.deepSleep));
+    const remArr  = hist.filter(h=>h.remSleep).map(h=>Number(h.remSleep));
+    const hrvArr  = hist.filter(h=>h.hrv).map(h=>Number(h.hrv));
+    const rdyArr  = hist.filter(h=>h.readiness).map(h=>Number(h.readiness));
+    const calArr  = hist.filter(h=>h.calories).map(h=>Number(h.calories));
+    const proArr  = hist.filter(h=>h.protein).map(h=>Number(h.protein));
+    const stpArr  = hist.filter(h=>h.steps).map(h=>Number(h.steps));
+    const volArr  = hist.filter(h=>h.workoutVol&&h.workoutVol>0).map(h=>Number(h.workoutVol));
+    const workouts = hist.filter(h=>h.workoutType&&h.workoutType!=="Rest");
+    const mgVol = {Chest:0,Back:0,Shoulders:0,Biceps:0,Triceps:0,Legs:0,Core:0};
+    hist.forEach(h=>{ for(const mg of Object.keys(mgVol)){ const k="vol"+mg; if(h[k]) mgVol[mg]+=Number(h[k]); }});
+    const mgStr = Object.entries(mgVol).filter(([,v])=>v>0).map(([k,v])=>`${k}:${Math.round(v).toLocaleString()}`).join(" | ");
 
-    if (coachId === "food") {
-      const hdr = "DATE         CALS  PROTEIN  CARBS  FAT  FIBER  WATER  WEIGHT";
-      const sep = "─".repeat(hdr.length);
-      const rows = hist.map(h => [
-        lp(h.syncDate||"—", 12),
-        rp(n(h.calories), 5),
-        rp(n(h.protein)+"g", 8),
-        rp(n(h.carbs)+"g", 6),
-        rp(n(h.fat)+"g", 4),
-        rp(n(h.fiber)+"g", 6),
-        rp((h.water?Number(h.water).toFixed(1)+"L":"—"), 6),
-        rp((h.weight?Number(h.weight).toFixed(1)+"lbs":"—"), 8),
-      ].join("")).join("\n");
-      const days  = hist.filter(h=>h.calories);
-      const avg   = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
-      const protArr = hist.filter(h=>h.protein).map(h=>h.protein);
-      const calArr  = hist.filter(h=>h.calories).map(h=>h.calories);
-      const wtArr   = hist.filter(h=>h.weight).map(h=>h.weight);
-      const summary = `30D NUTRITION SUMMARY: Avg calories ${avg(calArr)} | Avg protein ${avg(protArr)}g | Days tracked ${days.length}/30 | Weight ${wtArr.length?Number(wtArr[wtArr.length-1]).toFixed(1):"—"}→${wtArr.length?Number(wtArr[0]).toFixed(1):"—"} lbs`;
-      return `━━ 30-DAY NUTRITION HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
-    }
+    const summaries = [
+      `BODY:      Weight ${wtArr.length?wtArr[wtArr.length-1].toFixed(1):"—"}→${wtArr.length?wtArr[0].toFixed(1):"—"} lbs | BF% ${bfArr.length?bfArr[bfArr.length-1].toFixed(1):"—"}→${bfArr.length?bfArr[0].toFixed(1):"—"}% | Lean ${leArr.length?leArr[leArr.length-1].toFixed(1):"—"}→${leArr.length?leArr[0].toFixed(1):"—"} lbs (oldest→newest)`,
+      `SLEEP:     Avg score ${avg(scArr)}/100 (best ${scArr.length?Math.max(...scArr):"—"}, worst ${scArr.length?Math.min(...scArr):"—"}) | Avg ${avg(durArr)}h total | Avg deep ${avg(deepArr)}h | Avg REM ${avg(remArr)}h`,
+      `RECOVERY:  Avg HRV ${avg(hrvArr)}ms (best ${hrvArr.length?Math.max(...hrvArr):"—"}, worst ${hrvArr.length?Math.min(...hrvArr):"—"}) | Avg Readiness ${avg(rdyArr)}/100`,
+      `NUTRITION: Avg ${avg(calArr)} kcal/day | Avg protein ${avg(proArr)}g/day | Days tracked ${calArr.length}/30`,
+      `ACTIVITY:  Avg ${Math.round(avg(stpArr)).toLocaleString()} steps/day`,
+      `TRAINING:  ${workouts.length} workouts in 30 days | Avg vol ${volArr.length?Math.round(avg(volArr)).toLocaleString():"—"} lbs`,
+      mgStr ? `MUSCLE VOL (30d lbs): ${mgStr}` : null,
+    ].filter(Boolean).join("\n");
 
-    if (coachId === "sleep") {
-      const hdr = "DATE         SCORE  DUR   DEEP  REM   HRV   RHR  RDY  SPO2";
-      const sep = "─".repeat(hdr.length);
-      const rows = hist.map(h => [
-        lp(h.syncDate||"—", 12),
-        rp(n(h.sleepScore), 6),
-        rp((h.sleepDur?Number(h.sleepDur).toFixed(1)+"h":"—"), 5),
-        rp((h.deepSleep?Number(h.deepSleep).toFixed(1)+"h":"—"), 5),
-        rp((h.remSleep?Number(h.remSleep).toFixed(1)+"h":"—"), 5),
-        rp(n(h.hrv)+"ms", 7),
-        rp(n(h.restingHR), 5),
-        rp(n(h.readiness), 4),
-        rp((h.spo2?Number(h.spo2).toFixed(1)+"%":"—"), 5),
-      ].join("")).join("\n");
-      const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
-      const scArr  = hist.filter(h=>h.sleepScore).map(h=>h.sleepScore);
-      const durArr = hist.filter(h=>h.sleepDur).map(h=>h.sleepDur);
-      const hrvArr = hist.filter(h=>h.hrv).map(h=>h.hrv);
-      const remArr = hist.filter(h=>h.remSleep).map(h=>h.remSleep);
-      const deeArr = hist.filter(h=>h.deepSleep).map(h=>h.deepSleep);
-      const best   = scArr.length ? Math.max(...scArr) : "—";
-      const worst  = scArr.length ? Math.min(...scArr) : "—";
-      const summary = `30D SLEEP SUMMARY: Avg score ${avg(scArr)}/100 (best ${best}, worst ${worst}) | Avg duration ${avg(durArr)}h | Avg deep ${avg(deeArr)}h | Avg REM ${avg(remArr)}h | Avg HRV ${avg(hrvArr)}ms`;
-      return `━━ 30-DAY SLEEP HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
-    }
-
-    // progress coach — full picture
-    const hdr = "DATE         WEIGHT  BF%   LEAN   STEPS   CALS  PRO  SLEEP  HRV  WORKOUT";
+    // ── Full daily table — every coach gets all columns ──
+    const hdr = "DATE         WT    BF%  SLEEP HRV RDY  CALS  PRO  STEPS   WORKOUT      VOL(lbs) SETS MUSCLE GROUPS";
     const sep = "─".repeat(hdr.length);
     const rows = hist.map(h => [
       lp(h.syncDate||"—", 12),
-      rp((h.weight?Number(h.weight).toFixed(1):"—"), 7),
+      rp((h.weight?Number(h.weight).toFixed(1):"—"), 5),
       rp((h.bodyFat?Number(h.bodyFat).toFixed(1)+"%":"—"), 5),
-      rp((h.leanMass?Number(h.leanMass).toFixed(1):"—"), 6),
-      rp((h.steps?Math.round(h.steps).toLocaleString():"—"), 7),
-      rp(n(h.calories), 5),
-      rp(n(h.protein)+"g", 4),
       rp(n(h.sleepScore), 6),
       rp(n(h.hrv), 4),
-      "  "+(h.workoutType||"—"),
+      rp(n(h.readiness), 4),
+      rp(n(h.calories), 5),
+      rp(n(h.protein)+"g", 4),
+      rp((h.steps?Math.round(Number(h.steps)).toLocaleString():"—"), 7),
+      "  "+lp(h.workoutType||"Rest", 12),
+      rp((h.workoutVol&&h.workoutVol>0?Math.round(Number(h.workoutVol)).toLocaleString():"—"), 8),
+      rp(n(h.fitbodSets), 5),
+      "  "+(h.fitbodMuscleGroups||"—"),
     ].join("")).join("\n");
-    const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
-    const wtArr = hist.filter(h=>h.weight).map(h=>h.weight);
-    const bfArr = hist.filter(h=>h.bodyFat).map(h=>h.bodyFat);
-    const leArr = hist.filter(h=>h.leanMass).map(h=>h.leanMass);
-    const summary = `30D PROGRESS SUMMARY: Weight ${wtArr.length?Number(wtArr[wtArr.length-1]).toFixed(1):"—"}→${wtArr.length?Number(wtArr[0]).toFixed(1):"—"} lbs | BF ${bfArr.length?Number(bfArr[bfArr.length-1]).toFixed(1):"—"}→${bfArr.length?Number(bfArr[0]).toFixed(1):"—"}% | Lean ${leArr.length?Number(leArr[leArr.length-1]).toFixed(1):"—"}→${leArr.length?Number(leArr[0]).toFixed(1):"—"} lbs | Avg HRV ${avg(hist.filter(h=>h.hrv).map(h=>h.hrv))}`;
-    return `━━ 30-DAY PROGRESS HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
+
+    // Coach-specific focus note so the AI knows what lens to apply
+    const focus = {
+      workout:  "COACHING FOCUS: Use ALL data — recovery (HRV/sleep/readiness) dictates today's intensity. Nutrition (protein/cals) affects muscle retention. Training history reveals weak muscle groups and volume trends.",
+      food:     "COACHING FOCUS: Use ALL data — training days need more protein/carbs. Poor sleep days may drive cravings. Steps + cals burned determine deficit. Body weight trend validates caloric approach.",
+      sleep:    "COACHING FOCUS: Use ALL data — training load and volume affect sleep architecture. Caloric deficit impacts sleep quality. Steps/activity affect readiness. Body fat affects hormones and sleep depth.",
+      progress: "COACHING FOCUS: Use ALL data — every metric contributes to the 10% BF goal. Identify correlations: which behaviors drive the best body composition changes?",
+    };
+
+    return `━━ 30-DAY COMPLETE BIOMETRIC HISTORY ━━
+${focus[coachId]||focus.progress}
+
+30-DAY AVERAGES & TRENDS:
+${summaries}
+
+${sep}
+${hdr}
+${sep}
+${rows}`;
   }, [liveHistory]);
 
   // ctx(coachId) — today's snapshot + 30-day coach-specific history table
