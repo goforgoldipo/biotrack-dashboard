@@ -806,7 +806,116 @@ export default function App() {
     } catch(e) { setJsonError("Invalid JSON — copy the Dictionary text from your Shortcut and paste it here."); }
   };
 
-  const ctx = useCallback(() => {
+  // Build compact 30-day history table tailored to each coach
+  const buildHistory = useCallback((coachId) => {
+    const hist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
+    if (!hist.length) return "";
+    const n  = (v, dec=0) => (v===null||v===undefined) ? "—" : dec ? Number(v).toFixed(dec) : Math.round(Number(v));
+    const lp = (s, w) => String(s).padEnd(w).slice(0, w);
+    const rp = (s, w) => String(s).padStart(w).slice(-w);
+
+    if (coachId === "workout") {
+      const hdr = "DATE         WORKOUT       VOL(lbs)  SETS  REPS  MAX(lbs)  HRV   RDY  SLEEP  MUSCLE GROUPS";
+      const sep = "─".repeat(hdr.length);
+      const rows = hist.map(h => [
+        lp(h.syncDate||"—", 12),
+        lp(h.workoutType||"Rest", 13),
+        rp(n(h.workoutVol), 8),
+        rp(n(h.fitbodSets), 5),
+        rp(n(h.fitbodTotalReps), 5),
+        rp(n(h.fitbodMaxWeightLbs), 9),
+        rp(n(h.hrv), 5),
+        rp(n(h.readiness), 5),
+        rp(n(h.sleepScore), 6),
+        "  "+(h.fitbodMuscleGroups||"—"),
+      ].join("")).join("\n");
+      // 30-day training summary
+      const workouts = hist.filter(h=>h.workoutType&&h.workoutType!=="Rest");
+      const avgHRV  = hist.filter(h=>h.hrv).map(h=>h.hrv);
+      const avgRdy  = hist.filter(h=>h.readiness).map(h=>h.readiness);
+      const volArr  = workouts.map(h=>h.workoutVol||0);
+      const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
+      const summary = `30D TRAINING SUMMARY: ${workouts.length} workouts | Avg vol ${Math.round(avg(volArr)).toLocaleString()} lbs | Avg HRV ${avg(avgHRV)} | Avg Readiness ${avg(avgRdy)}`;
+      // Per muscle group totals
+      const mgVol = {Chest:0,Back:0,Shoulders:0,Biceps:0,Triceps:0,Legs:0,Core:0};
+      hist.forEach(h=>{ for(const mg of Object.keys(mgVol)) { const k="vol"+mg; if(h[k]) mgVol[mg]+=h[k]; }});
+      const mgStr = Object.entries(mgVol).filter(([,v])=>v>0).map(([k,v])=>`${k}:${Math.round(v).toLocaleString()}`).join(" | ");
+      return `━━ 30-DAY TRAINING HISTORY ━━\n${summary}\nVOLUME BY MUSCLE GROUP (lbs): ${mgStr||"no data yet"}\n${sep}\n${hdr}\n${sep}\n${rows}`;
+    }
+
+    if (coachId === "food") {
+      const hdr = "DATE         CALS  PROTEIN  CARBS  FAT  FIBER  WATER  WEIGHT";
+      const sep = "─".repeat(hdr.length);
+      const rows = hist.map(h => [
+        lp(h.syncDate||"—", 12),
+        rp(n(h.calories), 5),
+        rp(n(h.protein)+"g", 8),
+        rp(n(h.carbs)+"g", 6),
+        rp(n(h.fat)+"g", 4),
+        rp(n(h.fiber)+"g", 6),
+        rp((h.water?Number(h.water).toFixed(1)+"L":"—"), 6),
+        rp((h.weight?Number(h.weight).toFixed(1)+"lbs":"—"), 8),
+      ].join("")).join("\n");
+      const days  = hist.filter(h=>h.calories);
+      const avg   = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
+      const protArr = hist.filter(h=>h.protein).map(h=>h.protein);
+      const calArr  = hist.filter(h=>h.calories).map(h=>h.calories);
+      const wtArr   = hist.filter(h=>h.weight).map(h=>h.weight);
+      const summary = `30D NUTRITION SUMMARY: Avg calories ${avg(calArr)} | Avg protein ${avg(protArr)}g | Days tracked ${days.length}/30 | Weight ${wtArr.length?Number(wtArr[wtArr.length-1]).toFixed(1):"—"}→${wtArr.length?Number(wtArr[0]).toFixed(1):"—"} lbs`;
+      return `━━ 30-DAY NUTRITION HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
+    }
+
+    if (coachId === "sleep") {
+      const hdr = "DATE         SCORE  DUR   DEEP  REM   HRV   RHR  RDY  SPO2";
+      const sep = "─".repeat(hdr.length);
+      const rows = hist.map(h => [
+        lp(h.syncDate||"—", 12),
+        rp(n(h.sleepScore), 6),
+        rp((h.sleepDur?Number(h.sleepDur).toFixed(1)+"h":"—"), 5),
+        rp((h.deepSleep?Number(h.deepSleep).toFixed(1)+"h":"—"), 5),
+        rp((h.remSleep?Number(h.remSleep).toFixed(1)+"h":"—"), 5),
+        rp(n(h.hrv)+"ms", 7),
+        rp(n(h.restingHR), 5),
+        rp(n(h.readiness), 4),
+        rp((h.spo2?Number(h.spo2).toFixed(1)+"%":"—"), 5),
+      ].join("")).join("\n");
+      const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
+      const scArr  = hist.filter(h=>h.sleepScore).map(h=>h.sleepScore);
+      const durArr = hist.filter(h=>h.sleepDur).map(h=>h.sleepDur);
+      const hrvArr = hist.filter(h=>h.hrv).map(h=>h.hrv);
+      const remArr = hist.filter(h=>h.remSleep).map(h=>h.remSleep);
+      const deeArr = hist.filter(h=>h.deepSleep).map(h=>h.deepSleep);
+      const best   = scArr.length ? Math.max(...scArr) : "—";
+      const worst  = scArr.length ? Math.min(...scArr) : "—";
+      const summary = `30D SLEEP SUMMARY: Avg score ${avg(scArr)}/100 (best ${best}, worst ${worst}) | Avg duration ${avg(durArr)}h | Avg deep ${avg(deeArr)}h | Avg REM ${avg(remArr)}h | Avg HRV ${avg(hrvArr)}ms`;
+      return `━━ 30-DAY SLEEP HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
+    }
+
+    // progress coach — full picture
+    const hdr = "DATE         WEIGHT  BF%   LEAN   STEPS   CALS  PRO  SLEEP  HRV  WORKOUT";
+    const sep = "─".repeat(hdr.length);
+    const rows = hist.map(h => [
+      lp(h.syncDate||"—", 12),
+      rp((h.weight?Number(h.weight).toFixed(1):"—"), 7),
+      rp((h.bodyFat?Number(h.bodyFat).toFixed(1)+"%":"—"), 5),
+      rp((h.leanMass?Number(h.leanMass).toFixed(1):"—"), 6),
+      rp((h.steps?Math.round(h.steps).toLocaleString():"—"), 7),
+      rp(n(h.calories), 5),
+      rp(n(h.protein)+"g", 4),
+      rp(n(h.sleepScore), 6),
+      rp(n(h.hrv), 4),
+      "  "+(h.workoutType||"—"),
+    ].join("")).join("\n");
+    const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
+    const wtArr = hist.filter(h=>h.weight).map(h=>h.weight);
+    const bfArr = hist.filter(h=>h.bodyFat).map(h=>h.bodyFat);
+    const leArr = hist.filter(h=>h.leanMass).map(h=>h.leanMass);
+    const summary = `30D PROGRESS SUMMARY: Weight ${wtArr.length?Number(wtArr[wtArr.length-1]).toFixed(1):"—"}→${wtArr.length?Number(wtArr[0]).toFixed(1):"—"} lbs | BF ${bfArr.length?Number(bfArr[bfArr.length-1]).toFixed(1):"—"}→${bfArr.length?Number(bfArr[0]).toFixed(1):"—"}% | Lean ${leArr.length?Number(leArr[leArr.length-1]).toFixed(1):"—"}→${leArr.length?Number(leArr[0]).toFixed(1):"—"} lbs | Avg HRV ${avg(hist.filter(h=>h.hrv).map(h=>h.hrv))}`;
+    return `━━ 30-DAY PROGRESS HISTORY ━━\n${summary}\n${sep}\n${hdr}\n${sep}\n${rows}`;
+  }, [liveHistory]);
+
+  // ctx(coachId) — today's snapshot + 30-day coach-specific history table
+  const ctx = useCallback((coachId) => {
     const d = { ...today, ...manual };
     const seg = [
       d.trunkFat    ? `Trunk ${d.trunkFat}%`    : null,
@@ -822,16 +931,18 @@ export default function App() {
       d.rightLegMuscle ? `R.Leg ${d.rightLegMuscle}lbs` : null,
       d.leftLegMuscle  ? `L.Leg ${d.leftLegMuscle}lbs`  : null,
     ].filter(Boolean).join(" | ");
-    return `━━ BIOMETRIC SNAPSHOT ${liveData?"[LIVE]":"[DEMO]"} ━━
+    const snapshot = `━━ TODAY'S SNAPSHOT ${liveData?"[LIVE]":"[DEMO]"} ━━
 BODY (Hume): Weight ${d.weight}lbs | Body Fat ${d.bodyFat}% | Lean Mass ${d.leanMass}lbs | BMI ${d.bmi||"—"} | Visceral Fat ${d.visceralFat||"—"}
 SEGMENTAL FAT: ${seg||"not yet entered — remind user to log Hume scan"}
 SEGMENTAL MUSCLE: ${mus||"not yet entered"}
-SLEEP (Oura): Score ${d.sleepScore}/100 | ${d.sleepDur}h | Deep ${d.deepSleep}h | REM ${d.remSleep}h | HRV ${d.hrv}ms | RHR ${d.restingHR}bpm | Readiness ${d.readiness}/100
+SLEEP (Oura): Score ${d.sleepScore}/100 | ${d.sleepDur}h total | Deep ${d.deepSleep}h | REM ${d.remSleep}h | HRV ${d.hrv}ms | RHR ${d.restingHR}bpm | Readiness ${d.readiness}/100
 NUTRITION (MFP): ${d.calories}kcal | Protein ${d.protein}g | Carbs ${d.carbs}g | Fat ${d.fat}g | Fiber ${d.fiber}g | Water ${d.water}L
 ACTIVITY (Apple): ${Number(d.steps).toLocaleString()} steps | ${d.calsBurned}kcal burned | Avg HR ${d.avgHR}bpm | VO2 ${d.vo2max}
-TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
-30D BF: ${DEMO[29].bodyFat}% → ${d.bodyFat}% | GOAL: Minimize body fat, preserve lean mass. Use segmental data to target highest-fat regions.`;
-  },[today,manual,liveData]);
+TRAINING: ${d.workoutType||"Rest"} ${d.workoutDur?d.workoutDur+"min":""} | Volume ${d.workoutVol?Math.round(d.workoutVol).toLocaleString()+"lbs":"—"} | Sets ${d.fitbodSets||"—"} | Reps ${d.fitbodTotalReps||"—"} | Max ${d.fitbodMaxWeightLbs||"—"}lbs
+GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
+    const history = buildHistory(coachId||"progress");
+    return `${snapshot}\n\n${history}`;
+  },[today,manual,liveData,buildHistory]);
 
   const [claudeKey,setClaudeKey]=useState(()=>localStorage.getItem("bt_claude_key")||"");
   const callClaude = async (sys,prompt,content) => {
@@ -926,8 +1037,9 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
     const sys = coach.sys;
     try {
       let res;
-      if(llmId==="claude") res=await callClaude(sys,`${promptText}\n\nMY CURRENT DATA:\n${ctx()}`);
-      else if(llmId==="gpt4"&&apiKeys.gpt4) res=await callGPT(sys,`${promptText}\n\nMY CURRENT DATA:\n${ctx()}`,apiKeys.gpt4);
+      const dataCtx = ctx(coachId);
+      if(llmId==="claude") res=await callClaude(sys,`${promptText}\n\n${dataCtx}`);
+      else if(llmId==="gpt4"&&apiKeys.gpt4) res=await callGPT(sys,`${promptText}\n\n${dataCtx}`,apiKeys.gpt4);
       else res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
       setAnalyses(p=>({...p,[qKey]:res}));
     } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
@@ -940,7 +1052,7 @@ TRAINING (Fitbod): ${d.workoutType} ${d.workoutDur?d.workoutDur+"min":""}
       const recent=DEMO.slice(0,7).map(x=>`${x.date} ${x.workoutType}`).join(", ");
       const r=await callClaude(
         "You are an elite strength coach for fat loss. Prescribe today's exact workout: Warm-Up → Main → Accessory → Finisher. Include exercises, sets×reps, load, tempo, rest.",
-        `Readiness: ${today.readiness}/100 | HRV: ${today.hrv}ms | Sleep: ${today.sleepScore}/100\nRecent: ${recent}\n${ctx()}`
+        `Readiness: ${today.readiness}/100 | HRV: ${today.hrv}ms | Sleep: ${today.sleepScore}/100\nRecent: ${recent}\n${ctx("workout")}`
       );
       setWorkout(r);
     } catch(e){setWorkout(`⚠ ${e.message}`);}
