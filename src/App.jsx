@@ -1080,11 +1080,33 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.choices[0].message.content;
   };
 
+  // Grok — xAI API (OpenAI-compatible endpoint)
+  const callGrok = async (sys,prompt,key) => {
+    const r=await fetch("https://api.x.ai/v1/chat/completions",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+      body:JSON.stringify({model:"grok-3",messages:[{role:"system",content:sys},{role:"user",content:prompt}]})});
+    const j=await r.json(); if(j.error)throw new Error(j.error.message||j.error); return j.choices[0].message.content;
+  };
+
+  // Gemini — Google Generative Language API
+  const callGemini = async (sys,prompt,key) => {
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:sys}]},
+        contents:[{role:"user",parts:[{text:prompt}]}],
+        generationConfig:{maxOutputTokens:2000},
+      })});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error.message||JSON.stringify(j.error));
+    return j.candidates?.[0]?.content?.parts?.[0]?.text || "No response";
+  };
+
   const COACHES = [
     {
       id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
       sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
-      defaultDailyPrompt:"Based on my recovery data (HRV, sleep, resting HR) and my last 7 days of training, give me today's exact workout. Include warm-up → main lifts (sets×reps×load) → accessories → finisher. Identify which muscle groups need priority based on my historical volume and weak points. Keep it specific and actionable — I want to execute this today.",
+      defaultDailyPrompt:"Analyze my last 30 days of training data and recovery metrics. Identify: (1) which muscle groups are under-trained based on volume trends, (2) how my HRV and readiness have trended and what that means for today's intensity, (3) any patterns between sleep quality and workout performance. Then give me today's exact workout — warm-up → main lifts (sets×reps×load) → accessories → finisher — calibrated to my current recovery state. Be specific with numbers pulled directly from my data.",
       questions:[
         {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
         {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
@@ -1095,7 +1117,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"food", icon:"🥗", name:"FOOD COACH", col:"#34d399",
       sys:"You are an elite sports nutritionist and registered dietitian specializing in whole food plant-powered vegan athletes targeting body recomposition. You design meal plans that maximize protein (180g+), optimize macros for fat loss, and use real whole foods — not processed fake meats. Be specific with foods, portions, calories, and macros per meal.",
-      defaultDailyPrompt:"Based on my macros, training schedule, and body fat goal, give me exactly what to eat today. Specify breakfast, lunch, dinner, and 2 snacks with exact foods, portions, calories, and macros. Target 180g+ protein in a caloric deficit. Whole food plant-powered vegan only — no processed fake meats. Include total daily calories, protein, carbs, fats.",
+      defaultDailyPrompt:"Analyze my last 30 days of nutrition data. Tell me: (1) my average protein vs my 180g+ target and how many days I hit it, (2) whether my caloric intake is producing the expected weight trend, (3) the biggest nutrition gaps hurting my body recomposition. Then give me exactly what to eat today — all meals and snacks with exact foods, portions, calories, protein, carbs, fat. Whole food plant-powered vegan only. Make the plan fix the specific gaps you found in my data.",
       questions:[
         {id:"today",label:"🍽️ TODAY'S MEALS",prompt:"Based on my current body comp, training schedule, and macro targets, give me exactly what to eat today. Specify breakfast, lunch, dinner, snacks with exact portions, calories, and macros. Total daily calories, protein (180g+), carbs, fats."},
         {id:"next7",label:"📅 NEXT 7 DAY MEAL PLAN",prompt:"Create a complete 7-day whole food plant-powered vegan meal plan optimized for fat loss and muscle preservation. Each day: breakfast, lunch, dinner, 2 snacks with exact foods, portions, calories, and macros. Target 180g+ protein daily in a caloric deficit. Use legumes, tofu, tempeh, seitan, quinoa, etc."},
@@ -1106,7 +1128,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"sleep", icon:"😴", name:"SLEEP COACH", col:"#a78bfa",
       sys:"You are an elite sleep performance coach who analyzes circadian rhythm, sleep architecture, HRV, and lifestyle factors. You help athletes optimize sleep for recovery, fat loss, and performance. Be specific about bedtime routines, environmental factors, nutrition timing, and lifestyle changes. Reference actual Oura data.",
-      defaultDailyPrompt:"Analyze my last 7 nights of sleep + HRV data and give me tonight's exact protocol: wind-down routine start time, bedtime, room temperature, nutrition cutoff, caffeine cutoff, blue light cutoff, and any supplements. Also identify the top 1 behavior to change today to improve tonight's sleep. Target 8+ hrs total, 1.5+ deep, 1.5+ REM.",
+      defaultDailyPrompt:"Analyze my last 30 nights of sleep data. Find: (1) my average deep sleep and REM vs optimal targets and which nights were best/worst, (2) correlations between my behaviors (training volume, caloric intake, steps) and sleep quality — be specific with dates and numbers, (3) my HRV trend and what's driving it. Then give me tonight's exact sleep protocol: wind-down start time, bedtime, temperature, nutrition cutoff, and the single most impactful change I can make based on what you found in my data.",
       questions:[
         {id:"today",label:"🌙 TONIGHT'S PROTOCOL",prompt:"Based on my recent sleep data (duration, deep/REM/light, HRV, readiness) and today's activities, give me an exact protocol for tonight: wind-down routine start time, bedtime, temperature, supplements, nutrition cutoff, blue light cutoff. Target optimal deep and REM sleep."},
         {id:"next7",label:"📅 NEXT 7 DAY SLEEP PLAN",prompt:"Analyze my sleep patterns and create a 7-day plan to improve sleep quality and HRV. Identify the biggest limiters (late meals, stress, training timing, inconsistent bedtime) and give specific daily changes. Target 8+ hours, 1.5+ deep, 1.5+ REM."},
@@ -1117,7 +1139,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"progress", icon:"🏆", name:"PROGRESS COACH", col:"#f43f5e",
       sys:"You are an elite mindset coach and body recomposition psychologist. You motivate, inspire, and hold athletes accountable to their goals while celebrating wins and reframing setbacks. Be direct, data-driven, and emotionally intelligent. Reference specific achievements from the client's historical data to build momentum. The client's goal is 10% body fat.",
-      defaultDailyPrompt:"Give me today's motivational brief. Reference my biggest measurable wins from the last 30 days (with specific numbers from my data), identify today's #1 focus area, and give me 3 actionable commitments for today that will move the needle toward 10% body fat. Be direct and inspiring — make me feel the momentum.",
+      defaultDailyPrompt:"Analyze all 30 days of my data across every metric — body composition, sleep, nutrition, training, recovery. Give me: (1) my top 3 measurable wins with exact numbers and dates, (2) the single biggest lever that would accelerate my progress to 10% body fat based on what the data actually shows is holding me back, (3) my projected timeline to 14%, 12%, and 10% body fat at my current pace. Then give me 3 specific, non-negotiable commitments for today. Be direct — use my actual numbers, not generic advice.",
       questions:[
         {id:"today",label:"🔥 DAILY MOTIVATION",prompt:"Give me today's motivational brief. Acknowledge what I've achieved (reference specific data milestones), identify today's key focus area, and give me 3 actionable commitments for today that will move the needle toward 10% body fat."},
         {id:"wins",label:"🏅 MY WINS THIS MONTH",prompt:"Analyze my data and call out every measurable win from the past 30 days — body comp changes, training PRs, consistency streaks, sleep improvements. Make me feel the progress I've made. Be specific with numbers."},
@@ -1160,12 +1182,17 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       const todaySnap = ctx(coachId); // today's full snapshot text
       const histText  = buildHistory(coachId); // 30-day structured text (for non-Claude LLMs)
       const csv30     = buildCSV30();           // 30-day CSV (attached as document for Claude)
+      // Full prompt for text-based LLMs (no file attachment)
+      const fullPrompt = `${promptText}\n\n${todaySnap}\n\n${histText}`;
       if(llmId==="claude") {
-        // Claude gets today's snapshot as text + full 30-day CSV as a document attachment
+        // Claude: today's snapshot as text + full 30-day CSV as document attachment
         res=await callClaude(sys,`${promptText}\n\n${todaySnap}`, csv30);
-      } else if(llmId==="gpt4"&&apiKeys.gpt4) {
-        // GPT-4 gets everything embedded as text (no file attachment in chat completions API)
-        res=await callGPT(sys,`${promptText}\n\n${todaySnap}\n\n${histText}`,apiKeys.gpt4);
+      } else if(llmId==="gpt4") {
+        res=await callGPT(sys, fullPrompt, apiKeys.gpt4);
+      } else if(llmId==="grok") {
+        res=await callGrok(sys, fullPrompt, apiKeys.grok);
+      } else if(llmId==="gemini") {
+        res=await callGemini(sys, fullPrompt, apiKeys.gemini);
       } else {
         res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
       }
@@ -2126,23 +2153,48 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       )}
 
       {/* ── API KEY MODAL */}
-      {keyModal && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
-          <div style={{...panel,width:"400px",maxWidth:"92vw",border:`1px solid ${C.bord2}`}}>
-            <div style={{color:C.text1,fontSize:"15px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"6px"}}>
-              {LLMS.find(l=>l.id===keyModal)?.icon} Connect {LLMS.find(l=>l.id===keyModal)?.name}
-            </div>
-            <div style={{fontSize:"12px",color:C.text3,marginBottom:"18px"}}>Your key is stored locally and never shared</div>
-            <label style={{fontSize:"11px",color:C.text2,display:"block",marginBottom:"6px",fontWeight:"600"}}>API KEY</label>
-            <input type="password" placeholder="sk-..." value={keyDraft} onChange={e=>setKeyDraft(e.target.value)}
-              style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:"16px"}}/>
-            <div style={{display:"flex",gap:"8px"}}>
-              <button onClick={()=>{setApiKeys(p=>({...p,[keyModal]:keyDraft}));setKeyModal(null);setKeyDraft("");}} style={bFill("#00ff9d")}>SAVE & CONNECT</button>
-              <button onClick={()=>{setKeyModal(null);setKeyDraft("");}} style={bOut(C.text3)}>CANCEL</button>
+      {keyModal && (()=>{
+        const LLM_META = {
+          gpt4:      { placeholder:"sk-...", hint:"Starts with sk-", link:"https://platform.openai.com/api-keys", linkLabel:"platform.openai.com/api-keys" },
+          gemini:    { placeholder:"AIza...", hint:"Starts with AIza", link:"https://aistudio.google.com/apikey", linkLabel:"aistudio.google.com/apikey" },
+          grok:      { placeholder:"xai-...", hint:"Starts with xai-", link:"https://console.x.ai/", linkLabel:"console.x.ai" },
+          perplexity:{ placeholder:"pplx-...", hint:"Starts with pplx-", link:"https://www.perplexity.ai/settings/api", linkLabel:"perplexity.ai/settings/api" },
+        };
+        const meta = LLM_META[keyModal] || { placeholder:"...", hint:"", link:"", linkLabel:"" };
+        const llm  = LLMS.find(l=>l.id===keyModal);
+        return (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+            <div style={{...panel,width:"420px",maxWidth:"92vw",border:`1px solid ${llm?.col||C.bord2}`}}>
+              <div style={{color:llm?.col||C.text1,fontSize:"15px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
+                {llm?.icon} Connect {llm?.name}
+              </div>
+              <div style={{fontSize:"12px",color:C.text3,marginBottom:"16px"}}>
+                Stored locally in your browser — never sent anywhere except {llm?.name}'s API
+              </div>
+              {meta.link && (
+                <div style={{background:"#0a0a16",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"10px 14px",marginBottom:"14px",fontSize:"11px",color:C.text2,lineHeight:"1.8"}}>
+                  Get your key at: <a href={meta.link} target="_blank" rel="noreferrer"
+                    style={{color:llm?.col||"#00ff9d",textDecoration:"none"}}>{meta.linkLabel} ↗</a>
+                  {meta.hint && <><br/><span style={{color:C.dim}}>{meta.hint}</span></>}
+                </div>
+              )}
+              <label style={{fontSize:"11px",color:C.text2,display:"block",marginBottom:"6px",fontWeight:"600",letterSpacing:"1px"}}>API KEY</label>
+              <input type="password" placeholder={meta.placeholder} value={keyDraft} onChange={e=>setKeyDraft(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter"&&keyDraft.trim()){ setApiKeys(p=>({...p,[keyModal]:keyDraft})); setKeyModal(null); setKeyDraft(""); }}}
+                style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:"16px"}} autoFocus/>
+              <div style={{display:"flex",gap:"8px"}}>
+                <button onClick={()=>{setApiKeys(p=>({...p,[keyModal]:keyDraft.trim()}));setKeyModal(null);setKeyDraft("");}}
+                  disabled={!keyDraft.trim()} style={bFill(llm?.col||"#00ff9d")}>⚡ SAVE & CONNECT</button>
+                <button onClick={()=>{setKeyModal(null);setKeyDraft("");}} style={bOut(C.text3)}>CANCEL</button>
+                {apiKeys[keyModal] && (
+                  <button onClick={()=>{setApiKeys(p=>{const n={...p};delete n[keyModal];return n;});setKeyModal(null);}}
+                    style={{...bOut("#ff6b35"),marginLeft:"auto"}}>✕ REMOVE KEY</button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} * { box-sizing: border-box; }`}</style>
     </div>
