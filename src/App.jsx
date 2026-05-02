@@ -130,6 +130,21 @@ const GROUPS = [
     {k:"fitbodExerciseCount",l:"Exercises",u:""},{k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
     {k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
   ]},
+  { id:"measurements", name:"BODY MEASUREMENTS", src:"MANUAL", col:"#00e5ff", rows:[
+    {k:"waistIn",    l:"Waist",        u:"in", hi:true},
+    {k:"chestIn",    l:"Chest",        u:"in", hi:true},
+    {k:"hipsIn",     l:"Hips",         u:"in"},
+    {k:"neckIn",     l:"Neck",         u:"in"},
+    {k:"shouldersIn",l:"Shoulders",    u:"in"},
+    {k:"rightBicepIn",l:"Right Bicep", u:"in", hi:true},
+    {k:"leftBicepIn", l:"Left Bicep",  u:"in"},
+    {k:"rightForearmIn",l:"Right Forearm",u:"in"},
+    {k:"leftForearmIn", l:"Left Forearm", u:"in"},
+    {k:"rightThighIn",l:"Right Thigh", u:"in", hi:true},
+    {k:"leftThighIn", l:"Left Thigh",  u:"in"},
+    {k:"rightCalfIn", l:"Right Calf",  u:"in"},
+    {k:"leftCalfIn",  l:"Left Calf",   u:"in"},
+  ]},
   { id:"volByGroup", name:"VOLUME BY MUSCLE GROUP", src:"FITBOD", col:"#fbbf24", rows:[
     {k:"volChest",l:"Chest Vol",u:"lbs",hi:true},{k:"repsChest",l:"Chest Reps",u:""},{k:"setsChest",l:"Chest Sets",u:""},{k:"maxChest",l:"Chest Max",u:"lbs"},
     {k:"volBack",l:"Back Vol",u:"lbs",hi:true},{k:"repsBack",l:"Back Reps",u:""},{k:"setsBack",l:"Back Sets",u:""},{k:"maxBack",l:"Back Max",u:"lbs"},
@@ -648,6 +663,20 @@ const mapImport = (p) => {
     setsBiceps: p.setsBiceps, setsTriceps: p.setsTriceps, setsLegs: p.setsLegs, setsCore: p.setsCore,
     maxChest: p.maxChest, maxBack: p.maxBack, maxShoulders: p.maxShoulders,
     maxBiceps: p.maxBiceps, maxTriceps: p.maxTriceps, maxLegs: p.maxLegs, maxCore: p.maxCore,
+    // Body measurements (inches) — manually entered
+    waistIn:     p.waistIn     || p.waist,
+    chestIn:     p.chestIn     || p.chest,
+    hipsIn:      p.hipsIn      || p.hips,
+    neckIn:      p.neckIn      || p.neck,
+    shouldersIn: p.shouldersIn || p.shoulders,
+    rightBicepIn:  p.rightBicepIn  || p.rightBicep,
+    leftBicepIn:   p.leftBicepIn   || p.leftBicep,
+    rightForearmIn:p.rightForearmIn|| p.rightForearm,
+    leftForearmIn: p.leftForearmIn || p.leftForearm,
+    rightThighIn:  p.rightThighIn  || p.rightThigh,
+    leftThighIn:   p.leftThighIn   || p.leftThigh,
+    rightCalfIn:   p.rightCalfIn   || p.rightCalf,
+    leftCalfIn:    p.leftCalfIn    || p.leftCalf,
     // Hume segmental — accept multiple naming conventions
     trunkFat:    p.trunkFat    || p.trunk_fat    || p.torsoFat  || p.torso_fat,
     rightArmFat: p.rightArmFat || p.right_arm_fat|| p.rightArm,
@@ -689,7 +718,7 @@ export default function App() {
   const [photos,setPhotos]=useState([]);
   const [photoLabels,setPhotoLabels]=useState([]);
   const [photoAnalysis,setPhotoAnalysis]=useState("");
-  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true,volByGroup:true});
+  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true,volByGroup:true,measurements:true});
   const [groupOrder,setGroupOrder]=useState(()=>{
     try { return JSON.parse(localStorage.getItem("bt_group_order")) || GROUPS.map(g=>g.id); }
     catch { return GROUPS.map(g=>g.id); }
@@ -924,6 +953,21 @@ export default function App() {
       ].filter(Boolean);
       if (trn.length) lines.push(`  TRAINING:  ${trn.join(" | ")}`);
 
+      // Body measurements
+      const meas = [
+        h.waistIn      ? `waist:${f1(h.waistIn)}"`      : null,
+        h.chestIn      ? `chest:${f1(h.chestIn)}"`      : null,
+        h.hipsIn       ? `hips:${f1(h.hipsIn)}"`        : null,
+        h.shouldersIn  ? `shoulders:${f1(h.shouldersIn)}"` : null,
+        h.rightBicepIn ? `rBicep:${f1(h.rightBicepIn)}"` : null,
+        h.leftBicepIn  ? `lBicep:${f1(h.leftBicepIn)}"` : null,
+        h.rightThighIn ? `rThigh:${f1(h.rightThighIn)}"` : null,
+        h.leftThighIn  ? `lThigh:${f1(h.leftThighIn)}"` : null,
+        h.rightCalfIn  ? `rCalf:${f1(h.rightCalfIn)}"`  : null,
+        h.leftCalfIn   ? `lCalf:${f1(h.leftCalfIn)}"`   : null,
+      ].filter(Boolean);
+      if (meas.length) lines.push(`  MEASUREMENTS: ${meas.join(" | ")}`);
+
       // Per-muscle-group volume (only show groups with data)
       const mgLine = [
         ["Chest",     h.volChest,     h.repsChest,     h.setsChest,     h.maxChest],
@@ -976,10 +1020,23 @@ ${dayBlocks}`;
       d.rightLegMuscle ? `R.Leg ${d.rightLegMuscle}lbs` : null,
       d.leftLegMuscle  ? `L.Leg ${d.leftLegMuscle}lbs`  : null,
     ].filter(Boolean).join(" | ");
+    const measurementFields = [
+      d.waistIn      ? `Waist ${d.waistIn}"`      : null,
+      d.chestIn      ? `Chest ${d.chestIn}"`      : null,
+      d.hipsIn       ? `Hips ${d.hipsIn}"`        : null,
+      d.shouldersIn  ? `Shoulders ${d.shouldersIn}"` : null,
+      d.rightBicepIn ? `R.Bicep ${d.rightBicepIn}"` : null,
+      d.leftBicepIn  ? `L.Bicep ${d.leftBicepIn}"` : null,
+      d.rightThighIn ? `R.Thigh ${d.rightThighIn}"` : null,
+      d.leftThighIn  ? `L.Thigh ${d.leftThighIn}"` : null,
+      d.rightCalfIn  ? `R.Calf ${d.rightCalfIn}"`  : null,
+      d.leftCalfIn   ? `L.Calf ${d.leftCalfIn}"`   : null,
+    ].filter(Boolean).join(" | ");
     const snapshot = `━━ TODAY'S SNAPSHOT ${liveData?"[LIVE]":"[DEMO]"} ━━
 BODY (Hume): Weight ${d.weight}lbs | Body Fat ${d.bodyFat}% | Lean Mass ${d.leanMass}lbs | BMI ${d.bmi||"—"} | Visceral Fat ${d.visceralFat||"—"}
 SEGMENTAL FAT: ${seg||"not yet entered — remind user to log Hume scan"}
 SEGMENTAL MUSCLE: ${mus||"not yet entered"}
+MEASUREMENTS: ${measurementFields||"not yet entered — add in Manual tab"}
 SLEEP (Oura): Score ${d.sleepScore}/100 | ${d.sleepDur}h total | Deep ${d.deepSleep}h | REM ${d.remSleep}h | HRV ${d.hrv}ms | RHR ${d.restingHR}bpm | Readiness ${d.readiness}/100
 NUTRITION (MFP): ${d.calories}kcal | Protein ${d.protein}g | Carbs ${d.carbs}g | Fat ${d.fat}g | Fiber ${d.fiber}g | Water ${d.water}L
 ACTIVITY (Apple): ${Number(d.steps).toLocaleString()} steps | ${d.calsBurned}kcal burned | Avg HR ${d.avgHR}bpm | VO2 ${d.vo2max}
@@ -1030,6 +1087,13 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       {k:"fitbodWorkingSets",l:"Working Sets"},{k:"fitbodWarmupSets",l:"Warmup Sets"},
       {k:"fitbodTotalReps",l:"Total Reps"},{k:"fitbodExerciseCount",l:"Exercise Count"},
       {k:"fitbodMaxWeightLbs",l:"Max Weight (lbs)"},{k:"fitbodMuscleGroups",l:"Muscle Groups"},
+      // Body measurements (inches)
+      {k:"waistIn",l:"Waist (in)"},{k:"chestIn",l:"Chest (in)"},{k:"hipsIn",l:"Hips (in)"},
+      {k:"neckIn",l:"Neck (in)"},{k:"shouldersIn",l:"Shoulders (in)"},
+      {k:"rightBicepIn",l:"Right Bicep (in)"},{k:"leftBicepIn",l:"Left Bicep (in)"},
+      {k:"rightForearmIn",l:"Right Forearm (in)"},{k:"leftForearmIn",l:"Left Forearm (in)"},
+      {k:"rightThighIn",l:"Right Thigh (in)"},{k:"leftThighIn",l:"Left Thigh (in)"},
+      {k:"rightCalfIn",l:"Right Calf (in)"},{k:"leftCalfIn",l:"Left Calf (in)"},
       // Per-muscle volume (Fitbod)
       {k:"volChest",l:"Chest Vol (lbs)"},{k:"repsChest",l:"Chest Reps"},{k:"setsChest",l:"Chest Sets"},{k:"maxChest",l:"Chest Max (lbs)"},
       {k:"volBack",l:"Back Vol (lbs)"},{k:"repsBack",l:"Back Reps"},{k:"setsBack",l:"Back Sets"},{k:"maxBack",l:"Back Max (lbs)"},
@@ -1106,16 +1170,22 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     {
       id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
       sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
-      defaultDailyPrompt:`Analyze ALL of my data — training history, body composition, recovery (HRV, sleep, readiness), nutrition, and activity — then build me the optimal 1–4 week workout plan to maximize muscle growth and accelerate body fat reduction toward 10%.
+      defaultDailyPrompt:`Analyze ALL of my data — segmental body fat % by region (trunk, arms, legs), body measurements (waist, chest, arms, thighs), per-muscle-group training volume, body composition trend, recovery (HRV, sleep, readiness), and nutrition — then build me the optimal 1–4 week workout plan to maximize muscle growth and accelerate fat loss toward 10% body fat.
+
+WORKOUT CONSTRAINTS (non-negotiable):
+• Exactly 7 exercises per session
+• Exactly 4 sets per exercise (28 sets total)
+• Maximum 75 minutes per session including warm-up and cool-down
+• Structure: 1 compound warm-up + 3 primary compound lifts + 2 isolation/accessory + 1 finisher
 
 Structure your response as:
-1. DATA ANALYSIS: What does my last 30 days of training tell you? Which muscle groups are lagging in volume? How is my recovery trending? What patterns exist between my sleep/HRV and workout performance?
-2. PROGRAM DESIGN: A complete week-by-week plan (1–4 weeks) with exact days, workout types (Push/Pull/Legs/Core), exercises, sets×reps×load, tempo, and rest periods. Periodize intelligently based on my volume history.
-3. MUSCLE GROUP PRIORITY: Based on my per-muscle-group volume data, which areas need the most attention and how does the plan address that?
-4. RECOVERY PROTOCOL: How should I structure rest days, deload weeks, and active recovery given my HRV and readiness patterns?
-5. TODAY'S WORKOUT: Regardless of the full plan, give me exactly what to do today based on my current recovery state.
+1. BODY COMPOSITION ANALYSIS: Using my segmental fat % data (trunk, right arm, left arm, right leg, left leg) and body measurements — which regions carry the most fat and which muscles are underdeveloped? This determines exercise priority.
+2. TRAINING HISTORY ANALYSIS: Which muscle groups are lagging based on 30-day volume data? What is my current training frequency and volume per muscle group?
+3. RECOVERY ANALYSIS: How are my HRV and readiness trending? What intensity is appropriate today?
+4. 1–4 WEEK PROGRAM: Week-by-week plan. Each day shows: workout type, exactly 7 exercises with sets×reps×load×tempo×rest. Build the program to target my highest-fat/lowest-volume regions first.
+5. TODAY'S WORKOUT: The exact 7 exercises for today — exercise name, 4 sets × reps × weight, tempo (e.g. 3-1-2-0), rest period. Total time should not exceed 75 min. Show time estimate.
 
-Be specific — reference my actual numbers, not generic advice.`,
+All recommendations must be grounded in my actual segmental fat %, measurements, and training data.`,
       questions:[
         {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
         {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
@@ -1182,6 +1252,26 @@ Be brutally honest and data-driven. I want the truth from my numbers, not motiva
         {id:"wins",label:"🏅 MY WINS THIS MONTH",prompt:"Analyze my data and call out every measurable win from the past 30 days — body comp changes, training PRs, consistency streaks, sleep improvements. Make me feel the progress I've made. Be specific with numbers."},
         {id:"trajectory",label:"🚀 MY TRAJECTORY",prompt:"Project my trajectory to 10% body fat based on my current pace. When will I hit 14%, 12%, 10%? What needs to change to accelerate? Create a visual timeline and milestone plan. Make it ambitious but achievable."},
         {id:"reframe",label:"💡 REFRAME & REFOCUS",prompt:"If I'm feeling stuck, unmotivated, or frustrated — diagnose what's really going on from my data. Is it actually stalled progress, or am I being too hard on myself? Give me perspective and a path forward."},
+      ]
+    },
+    {
+      id:"celebrate", icon:"🏅", name:"CELEBRATION COACH", col:"#00ff9d",
+      sys:"You are an elite performance psychologist and celebration coach who specializes in recognizing and amplifying wins — big and small — to build momentum toward peak physical transformation. You scan data for every measurable improvement, streak, milestone, and personal record. You are enthusiastic, specific, and grounded in the numbers. Your job is to make the athlete feel the weight of their progress so they attack the next phase with full confidence.",
+      defaultDailyPrompt:`Scan ALL of my last 30 days of data across every metric — body composition, training, nutrition, sleep, recovery, activity, and measurements — and find every single win worth celebrating.
+
+Structure your response as:
+1. THIS WEEK'S HEADLINE WIN: The single most impressive data point or trend from the last 7 days. Be specific with the number and why it matters.
+2. 30-DAY WINS BOARD: List every measurable improvement over the last 30 days — body fat down, lean mass up, training PRs, volume milestones, sleep streaks, protein targets hit, HRV improvements, step streaks. No win is too small. Give the exact before/after numbers.
+3. PERSONAL RECORDS: Any new PRs in max weight lifted (by muscle group), highest single-day volume, longest training streak, best sleep score, highest HRV, best readiness score.
+4. CONSISTENCY AWARD: How many days did I train, hit protein target, get 7.5+ hours sleep, hit 10k steps? Call out any streaks.
+5. MOMENTUM MESSAGE: A powerful, data-backed statement about where I am on my journey to 10% body fat — what the numbers prove about my capability.
+
+Be specific, be enthusiastic, and reference exact numbers from my data. Make me feel this.`,
+      questions:[
+        {id:"week",label:"🏆 THIS WEEK'S WINS",prompt:"Scan my last 7 days of data and call out every win — PRs, improvements, streaks, milestones. Be specific with numbers. What should I be proud of this week?"},
+        {id:"month",label:"📈 30-DAY WINS BOARD",prompt:"Give me a complete 30-day wins board. Every measurable improvement across body comp, training, nutrition, sleep, and recovery. Before/after numbers for everything."},
+        {id:"prs",label:"🎯 MY PERSONAL RECORDS",prompt:"Find all my personal records across every metric in my data — max weights lifted per muscle group, highest volume day, best sleep score, highest HRV, best readiness, longest streaks."},
+        {id:"momentum",label:"⚡ MOMENTUM CHECK",prompt:"Based on my data trajectory, where am I headed? Project my momentum — if I keep this up, what will my stats look like in 30, 60, 90 days? Make it inspiring but grounded in my actual data."},
       ]
     },
   ];
@@ -1827,14 +1917,14 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           )}
           {claudeKey && (
             <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
-              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected · 4 coaches ready</span>
+              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected · {COACHES.length} coaches ready</span>
               <div style={{display:"flex",gap:"8px"}}>
                 <button onClick={async ()=>{
                   for(const coach of COACHES){
                     const llm = coachLLMs[coach.id]||"claude";
                     await analyze(llm, coach.id, "daily");
                   }
-                }} style={{...bFill("#00ff9d"),padding:"6px 14px",fontSize:"10px"}}>☰ COACH ME ON ALL 4 TODAY</button>
+                }} style={{...bFill("#00ff9d"),padding:"6px 14px",fontSize:"10px"}}>☰ RUN ALL {COACHES.length} COACHES NOW</button>
                 <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
               </div>
             </div>
@@ -1870,6 +1960,50 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               );
             })}
           </div>
+
+          {/* Weekly Schedule — each coach has an assigned day */}
+          {(() => {
+            // Workout=Sat, Food=Sun, Sleep=Mon, Progress=Tue, Celebrate=Wed
+            const SCHEDULE = { workout:"Saturday", food:"Sunday", sleep:"Monday", progress:"Tuesday", celebrate:"Wednesday" };
+            const DOW_IDX  = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
+            const today = new Date();
+            return (
+              <div style={{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}}>
+                {COACHES.map(coach => {
+                  const day = SCHEDULE[coach.id] || "—";
+                  const dayIdx = DOW_IDX[day] ?? -1;
+                  const todayIdx = today.getDay();
+                  const daysUntil = dayIdx < 0 ? null : (dayIdx - todayIdx + 7) % 7;
+                  const isToday = daysUntil === 0;
+                  const hasThisWeek = Object.keys(analyses).some(k =>
+                    k.startsWith(`daily_${coach.id}_`) && (() => {
+                      // Check if the key is from the current week
+                      const parts = k.split("_"); const dateStr = parts[parts.length-1];
+                      if(!dateStr||!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return false;
+                      const d = new Date(dateStr);
+                      const diffDays = Math.abs((today - d) / 86400000);
+                      return diffDays <= 7;
+                    })()
+                  );
+                  return (
+                    <div key={coach.id} onClick={()=>setActiveCoach(coach.id)}
+                      style={{flex:"1",minWidth:"140px",background:isToday?coach.col+"18":C.surf,
+                        border:`1px solid ${isToday?coach.col:hasThisWeek?"#4ade8040":C.bord}`,
+                        borderRadius:"6px",padding:"10px 14px",cursor:"pointer",position:"relative"}}>
+                      <div style={{fontSize:"10px",color:coach.col,letterSpacing:"1px",fontWeight:"bold",marginBottom:"2px"}}>
+                        {coach.icon} {coach.name.split(" ")[0]}
+                      </div>
+                      <div style={{fontSize:"12px",color:isToday?C.text1:C.text2,fontWeight:isToday?"bold":"normal"}}>{day}</div>
+                      <div style={{fontSize:"10px",color:isToday?"#00ff9d":C.dim,marginTop:"2px"}}>
+                        {isToday?"● TODAY":`in ${daysUntil} day${daysUntil===1?"":"s"}`}
+                      </div>
+                      {hasThisWeek && <div style={{position:"absolute",top:"8px",right:"10px",fontSize:"10px",color:"#4ade80"}}>✓</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {/* Active Coach Panel */}
           <div style={{...panel,borderColor:activeCoachObj.col+"40"}}>
