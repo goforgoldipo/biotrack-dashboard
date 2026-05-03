@@ -78,15 +78,15 @@ const DEMO = Array.from({ length: 3650 }, (_, i) => genDay(i));
 // ─── SCHEMA ───────────────────────────────────────────────────────────────────
 const GROUPS = [
   { id:"body", name:"BODY COMPOSITION", src:"HUME", col:"#ff6b35", rows:[
-    {k:"weight",l:"Weight",u:"lbs",hi:true},{k:"bodyFat",l:"Body Fat %",u:"%",hi:true,fat:true},
+    {k:"weight",l:"Weight",u:"lbs",hi:true,lib:true},{k:"bodyFat",l:"Body Fat %",u:"%",hi:true,fat:true},
     {k:"leanMass",l:"Lean Mass",u:"lbs"},{k:"muscleMass",l:"Muscle Mass",u:"lbs",hi:true},
     {k:"muscleRate",l:"Muscle Rate",u:"%"},{k:"fatMass",l:"Fat Mass",u:"lbs",fat:true},
-    {k:"bmi",l:"BMI",u:""},{k:"visceralFat",l:"Visceral Fat",u:"",fat:true},
+    {k:"bmi",l:"BMI",u:"",lib:true},{k:"visceralFat",l:"Visceral Fat",u:"",fat:true},
     {k:"subcutaneousFat",l:"Subcutaneous Fat",u:"",fat:true},
     {k:"boneMass",l:"Bone Mass",u:"lbs"},
     {k:"proteinMass",l:"Protein Mass",u:"lbs"},{k:"proteinRate",l:"Protein Rate",u:"%"},
     {k:"moisture",l:"Body Water",u:"%"},
-    {k:"bmr",l:"BMR",u:"kcal"},{k:"metabolicAge",l:"Metabolic Age",u:"yrs"},
+    {k:"bmr",l:"BMR",u:"kcal"},{k:"metabolicAge",l:"Metabolic Age",u:"yrs",lib:true},
   ]},
   { id:"segmental", name:"SEGMENTAL BODY FAT", src:"HUME BODY POD", col:"#00e5ff", rows:[
     {k:"trunkFat",   l:"Trunk",     u:"%", hi:true, fat:true},
@@ -104,16 +104,16 @@ const GROUPS = [
     {k:"sleepScore",l:"Sleep Score",u:"/100",hi:true},{k:"sleepDur",l:"Duration",u:"hrs"},
     {k:"deepSleep",l:"Deep Sleep",u:"hrs"},{k:"remSleep",l:"REM Sleep",u:"hrs"},
     {k:"lightSleep",l:"Light Sleep",u:"hrs"},
-    {k:"hrv",l:"HRV",u:"ms",hi:true},{k:"restingHR",l:"Resting HR",u:"bpm"},
-    {k:"hrRecovery",l:"HR Recovery 1min",u:"bpm"},{k:"respiratoryRate",l:"Respiratory Rate",u:"/min"},
+    {k:"hrv",l:"HRV",u:"ms",hi:true},{k:"restingHR",l:"Resting HR",u:"bpm",lib:true},
+    {k:"hrRecovery",l:"HR Recovery 1min",u:"bpm"},{k:"respiratoryRate",l:"Respiratory Rate",u:"/min",lib:true},
     {k:"spo2",l:"SpO2",u:"%"},{k:"sleepingWristTemp",l:"Wrist Temp",u:"°C"},
     {k:"readiness",l:"Readiness",u:"/100"},
   ]},
   { id:"nutrition", name:"NUTRITION", src:"MYFITNESSPAL", col:"#34d399", rows:[
     {k:"calories",l:"Calories In",u:"kcal",hi:true},{k:"protein",l:"Protein",u:"g",hi:true},
-    {k:"carbs",l:"Carbs",u:"g"},{k:"fat",l:"Fat",u:"g"},{k:"saturatedFat",l:"Saturated Fat",u:"g"},
-    {k:"sugar",l:"Sugar",u:"g"},{k:"fiber",l:"Fiber",u:"g"},{k:"cholesterol",l:"Cholesterol",u:"mg"},
-    {k:"sodium",l:"Sodium",u:"mg"},{k:"potassium",l:"Potassium",u:"mg"},
+    {k:"carbs",l:"Carbs",u:"g"},{k:"fat",l:"Fat",u:"g"},{k:"saturatedFat",l:"Saturated Fat",u:"g",lib:true},
+    {k:"sugar",l:"Sugar",u:"g",lib:true},{k:"fiber",l:"Fiber",u:"g"},{k:"cholesterol",l:"Cholesterol",u:"mg",lib:true},
+    {k:"sodium",l:"Sodium",u:"mg",lib:true},{k:"potassium",l:"Potassium",u:"mg"},
     {k:"calcium",l:"Calcium",u:"mg"},{k:"iron",l:"Iron",u:"mg"},{k:"vitaminC",l:"Vitamin C",u:"mg"},
     {k:"water",l:"Water",u:"L"},
   ]},
@@ -141,9 +141,9 @@ const GROUPS = [
     {k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
   ]},
   { id:"measurements", name:"BODY MEASUREMENTS", src:"MANUAL", col:"#00e5ff", rows:[
-    {k:"waistIn",    l:"Waist",        u:"in", hi:true},
+    {k:"waistIn",    l:"Waist",        u:"in", hi:true, lib:true},
     {k:"chestIn",    l:"Chest",        u:"in", hi:true},
-    {k:"hipsIn",     l:"Hips",         u:"in"},
+    {k:"hipsIn",     l:"Hips",         u:"in", lib:true},
     {k:"neckIn",     l:"Neck",         u:"in"},
     {k:"shouldersIn",l:"Shoulders",    u:"in"},
     {k:"rightBicepIn",l:"Right Bicep", u:"in", hi:true},
@@ -163,9 +163,9 @@ const GROUPS = [
     {k:"volTriceps",l:"Triceps Vol",u:"lbs",hi:true},{k:"repsTriceps",l:"Triceps Reps",u:""},{k:"setsTriceps",l:"Triceps Sets",u:""},{k:"maxTriceps",l:"Triceps Max",u:"lbs"},
     {k:"volLegs",l:"Legs Vol",u:"lbs",hi:true},{k:"repsLegs",l:"Legs Reps",u:""},{k:"setsLegs",l:"Legs Sets",u:""},{k:"maxLegs",l:"Legs Max",u:"lbs"},
     {k:"volCore",l:"Core Vol",u:"lbs",hi:true},{k:"repsCore",l:"Core Reps",u:""},{k:"setsCore",l:"Core Sets",u:""},{k:"maxCore",l:"Core Max",u:"lbs"},
-    {k:"trunkFat",l:"Trunk Fat",u:"%"},{k:"rightArmFat",l:"Right Arm Fat",u:"%"},
-    {k:"leftArmFat",l:"Left Arm Fat",u:"%"},{k:"rightLegFat",l:"Right Leg Fat",u:"%"},
-    {k:"leftLegFat",l:"Left Leg Fat",u:"%"},
+    {k:"trunkFat",l:"Trunk Fat",u:"%",fat:true},{k:"rightArmFat",l:"Right Arm Fat",u:"%",fat:true},
+    {k:"leftArmFat",l:"Left Arm Fat",u:"%",fat:true},{k:"rightLegFat",l:"Right Leg Fat",u:"%",fat:true},
+    {k:"leftLegFat",l:"Left Leg Fat",u:"%",fat:true},
   ]},
 ];
 
@@ -2110,8 +2110,8 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                       const vals=cols.map(c=>c.data[row.k]);
                       const nums=vals.filter(v=>typeof v==="number");
                       const trend=nums.length>=2?(nums[0]>nums[nums.length-1]?"↑":nums[0]<nums[nums.length-1]?"↓":"—"):"—";
-                      const fatKey=row.fat||["chestFat","absFat","legFat","visceralFat","trunkFat","rightArmFat","leftArmFat","rightLegFat","leftLegFat"].includes(row.k);
-                      const trendGood=fatKey?trend==="↓":trend==="↑";
+                      const lowerIsBetter = row.fat || row.lib;
+                      const trendGood = lowerIsBetter ? trend==="↓" : trend==="↑";
 
                       // % change: each col vs the next col (current vs prior period)
                       const pctChanges = vals.map((v,ci)=>{
@@ -2181,7 +2181,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
                             // All other rows — standard value + % change
                             const pct = pctChanges[ci];
-                            const pctGood = fatKey ? (pct !== null && pct < 0) : (pct !== null && pct > 0);
+                            const pctGood = lowerIsBetter ? (pct !== null && pct < 0) : (pct !== null && pct > 0);
                             const pctColor = pct === null ? "transparent"
                               : Math.abs(pct) < 0.05 ? C.dim
                               : pctGood ? "#4ade80" : "#ff6b35";
