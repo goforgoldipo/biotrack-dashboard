@@ -210,3 +210,127 @@ describe("🚫 Anti-patterns — things that must NOT be in the code", () => {
   test("No gradient backgrounds",        () => expect(APP).not.toContain("linear-gradient"));
   test("Monospaced font in global style", () => expect(APP).toContain("monospace"));
 });
+
+// ─── NOTES SYSTEM ─────────────────────────────────────────────────────────────
+
+describe("📓 Notes system — code presence checks", () => {
+  test("NOTE_TAGS array exists with sleep tag",    () => expect(APP).toContain(`"sleep"`));
+  test("NOTE_TAGS array exists with food tag",     () => expect(APP).toContain(`"food"`));
+  test("NOTE_TAGS array exists with workout tag",  () => expect(APP).toContain(`"workout"`));
+  test("NOTE_TAGS array exists with mindset tag",  () => expect(APP).toContain(`"mindset"`));
+  test("NOTE_TAGS array exists with goals tag",    () => expect(APP).toContain(`"goals"`));
+  test("NOTE_TAGS array exists with recovery tag", () => expect(APP).toContain(`"recovery"`));
+  test("NOTE_TAGS array exists with body tag",     () => expect(APP).toContain(`"body"`));
+  test("NOTE_TAGS array exists with general tag",  () => expect(APP).toContain(`"general"`));
+  test("NOTE_TAGS is defined as a const",          () => expect(APP).toContain("NOTE_TAGS"));
+  test("bt_notes localStorage key used",           () => expect(APP).toContain(`"bt_notes"`));
+  test("buildNotesContext function exists",         () => expect(APP).toContain("buildNotesContext"));
+  test("addNote function exists",                  () => expect(APP).toContain("const addNote"));
+  test("deleteNote function exists",               () => expect(APP).toContain("const deleteNote"));
+  test("noteFilter state exists",                  () => expect(APP).toContain("noteFilter"));
+});
+
+// ─── MEAL TIMING SCHEMA ───────────────────────────────────────────────────────
+
+describe("⏰ Meal timing — schema presence", () => {
+  test("MEAL TIMING group exists",           () => expect(APP).toContain(`name:"MEAL TIMING"`));
+  test("breakfastTime key exists",           () => expect(APP).toContain(`k:"breakfastTime"`));
+  test("lunchTime key exists",               () => expect(APP).toContain(`k:"lunchTime"`));
+  test("dinnerTime key exists",              () => expect(APP).toContain(`k:"dinnerTime"`));
+  test("lastMealTime key exists",            () => expect(APP).toContain(`k:"lastMealTime"`));
+  test("breakfastCals key exists",           () => expect(APP).toContain(`k:"breakfastCals"`));
+  test("type:\"time\" rows exist",           () => expect(APP).toContain(`type:"time"`));
+  test("MEAL TIMING src is MANUAL",          () => {
+    const mealTimingIdx = APP.indexOf(`name:"MEAL TIMING"`);
+    const srcManualIdx  = APP.indexOf(`src:"MANUAL"`, mealTimingIdx);
+    expect(mealTimingIdx).toBeGreaterThan(-1);
+    expect(srcManualIdx).toBeGreaterThan(-1);
+    expect(srcManualIdx - mealTimingIdx).toBeLessThan(200);
+  });
+  test("MEAL TIMING appears in buildHistory output", () => expect(APP).toContain("MEAL TIMING:"));
+  test("breakfastTime in mapImport",         () => expect(APP).toContain("breakfastTime: p.breakfastTime"));
+  test("lunchTime in mapImport",             () => expect(APP).toContain("lunchTime:     p.lunchTime"));
+  test("dinnerTime in mapImport",            () => expect(APP).toContain("dinnerTime:    p.dinnerTime"));
+  test("snackCals in mapImport",             () => expect(APP).toContain("snackCals:     p.snackCals"));
+  test("MEAL TIMING in ctx snapshot",        () => expect(APP).toContain("MEAL TIMING:"));
+  test("breakfastTime in buildCSV30",        () => expect(APP).toContain(`{k:"breakfastTime"`));
+});
+
+// ─── CHAT SYSTEM ──────────────────────────────────────────────────────────────
+
+describe("💬 Chat system — code presence", () => {
+  test("bt_chat_threads localStorage key",   () => expect(APP).toContain(`"bt_chat_threads"`));
+  test("sendChat function exists",           () => expect(APP).toContain("const sendChat"));
+  test("callClaudeChat function exists",     () => expect(APP).toContain("const callClaudeChat"));
+  test("callGPTChat function exists",        () => expect(APP).toContain("const callGPTChat"));
+  test("callGrokChat function exists",       () => expect(APP).toContain("const callGrokChat"));
+  test("callGeminiChat function exists",     () => expect(APP).toContain("const callGeminiChat"));
+  test("thread_ key prefix used",            () => expect(APP).toContain("`thread_${coachId}_${llmId}`"));
+  test("type:\"daily\" in thread entries",   () => expect(APP).toContain(`type:"daily"`));
+  test("type:\"qa\" in thread entries",      () => expect(APP).toContain(`type:"qa"`));
+  test("chatThreads state exists",           () => expect(APP).toContain("chatThreads"));
+  test("chatDraft state exists",             () => expect(APP).toContain("chatDraft"));
+});
+
+// ─── COACHING LOG ─────────────────────────────────────────────────────────────
+
+describe("📚 Coaching log — code presence", () => {
+  test("log tab defined in nav",             () => expect(APP).toContain(`["log",`));
+  test("LOG text in nav array",              () => expect(APP).toContain("LOG"));
+  test("coaching-log.txt export filename",   () => expect(APP).toContain(`"coaching-log.txt"`));
+  test("filter by coach logic exists",       () => expect(APP).toContain("logCoachFilter"));
+  test("DAILY BRIEFS filter option",         () => expect(APP).toContain("DAILY BRIEFS"));
+  test("log tab section defined",            () => expect(APP).toContain(`tab==="log"`));
+  test("Q&A filter option",                  () => expect(APP).toContain(`"Q&A"`));
+  test("logTypeFilter state exists",         () => expect(APP).toContain("logTypeFilter"));
+});
+
+// ─── SOURCE META ──────────────────────────────────────────────────────────────
+
+describe("🔖 Source meta — code presence", () => {
+  test("SOURCE_SIGNAL object defined",       () => expect(APP).toContain("SOURCE_SIGNAL"));
+  test("SOURCE_STALE object defined",        () => expect(APP).toContain("SOURCE_STALE"));
+  test("importMeta state exists",            () => expect(APP).toContain("importMeta"));
+  test("/meta endpoint fetched",             () => expect(APP).toContain("/meta"));
+  test("sourceMeta useMemo exists",          () => expect(APP).toContain("sourceMeta"));
+  test("fitbod_last_import key referenced",  () => expect(APP).toContain("fitbod_last_import"));
+  test("never imported warning text",        () => expect(APP).toContain("never imported"));
+  test("HUME stale threshold 14 days",       () => expect(APP).toContain(`"HUME":14`));
+  test("OURA stale threshold 2 days",        () => expect(APP).toContain(`"OURA":2`));
+  test("FITBOD stale threshold 7 days",      () => expect(APP).toContain(`"FITBOD":7`));
+});
+
+// ─── NEW TABS ─────────────────────────────────────────────────────────────────
+
+describe("🗂️ New tabs — all defined", () => {
+  test("notes tab defined",                  () => expect(APP).toContain(`"notes"`));
+  test("log tab defined",                    () => expect(APP).toContain(`"log"`));
+  test("Tab order: dashboard first",         () => {
+    const dashIdx  = APP.indexOf(`["dashboard"`);
+    const notesIdx = APP.indexOf(`["notes"`);
+    const logIdx   = APP.indexOf(`["log"`);
+    expect(dashIdx).toBeGreaterThan(-1);
+    expect(notesIdx).toBeGreaterThan(dashIdx);
+    expect(logIdx).toBeGreaterThan(dashIdx);
+  });
+  test("Tab order: notes before sync",       () => {
+    const notesIdx = APP.indexOf(`["notes"`);
+    const syncIdx  = APP.lastIndexOf(`["sync"`);
+    expect(notesIdx).toBeGreaterThan(-1);
+    expect(syncIdx).toBeGreaterThan(notesIdx);
+  });
+  test("Tab order: log before workout",      () => {
+    const logIdx     = APP.indexOf(`["log"`);
+    const workoutIdx = APP.indexOf(`["workout"`);
+    expect(logIdx).toBeGreaterThan(-1);
+    expect(workoutIdx).toBeGreaterThan(logIdx);
+  });
+  test("Tab order: coach before log",        () => {
+    const coachIdx = APP.indexOf(`["coach"`);
+    const logIdx   = APP.indexOf(`["log"`);
+    expect(coachIdx).toBeGreaterThan(-1);
+    expect(logIdx).toBeGreaterThan(coachIdx);
+  });
+  test("notes section rendered",             () => expect(APP).toContain(`tab==="notes"`));
+  test("log section rendered",               () => expect(APP).toContain(`tab==="log"`));
+});

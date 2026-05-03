@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, Fragment, useEffect } from "react";
+import { useState, useCallback, useRef, Fragment, useEffect, useMemo } from "react";
 
 // ─── COLOR SYSTEM ─────────────────────────────────────────────────────────────
 // text1: primary white text
@@ -116,6 +116,16 @@ const GROUPS = [
     {k:"sodium",l:"Sodium",u:"mg"},{k:"potassium",l:"Potassium",u:"mg"},
     {k:"calcium",l:"Calcium",u:"mg"},{k:"iron",l:"Iron",u:"mg"},{k:"vitaminC",l:"Vitamin C",u:"mg"},
     {k:"water",l:"Water",u:"L"},
+  ]},
+  { id:"mealTiming", name:"MEAL TIMING", src:"MANUAL", col:"#34d399", rows:[
+    {k:"breakfastTime", l:"Breakfast",      u:"", type:"time", hi:true},
+    {k:"lunchTime",     l:"Lunch",          u:"", type:"time"},
+    {k:"dinnerTime",    l:"Dinner",         u:"", type:"time"},
+    {k:"lastMealTime",  l:"Last Meal",      u:"", type:"time", hi:true},
+    {k:"breakfastCals", l:"Breakfast Cals", u:"kcal"},
+    {k:"lunchCals",     l:"Lunch Cals",     u:"kcal"},
+    {k:"dinnerCals",    l:"Dinner Cals",    u:"kcal"},
+    {k:"snackCals",     l:"Snack Cals",     u:"kcal"},
   ]},
   { id:"activity", name:"ACTIVITY", src:"APPLE HEALTH", col:"#f43f5e", rows:[
     {k:"steps",l:"Steps",u:"",hi:true},{k:"calsBurned",l:"Cals Burned",u:"kcal"},
@@ -688,6 +698,15 @@ const mapImport = (p) => {
     leftArmMuscle:  p.leftArmMuscle  || p.left_arm_muscle,
     rightLegMuscle: p.rightLegMuscle || p.right_leg_muscle,
     leftLegMuscle:  p.leftLegMuscle  || p.left_leg_muscle,
+    // Meal timing (manually logged or from iOS Shortcut)
+    breakfastTime: p.breakfastTime || null,
+    lunchTime:     p.lunchTime     || null,
+    dinnerTime:    p.dinnerTime    || null,
+    lastMealTime:  p.lastMealTime  || null,
+    breakfastCals: p.breakfastCals || null,
+    lunchCals:     p.lunchCals     || null,
+    dinnerCals:    p.dinnerCals    || null,
+    snackCals:     p.snackCals     || null,
   };
   // Compute leanMass from weight and bodyFat if not provided
   if(!m.leanMass && m.weight && m.bodyFat) m.leanMass = +(m.weight * (1 - m.bodyFat/100)).toFixed(1);
@@ -703,6 +722,54 @@ export default function App() {
   const [view,setView]=useState("daily");
   const [tab,setTab]=useState("dashboard");
   const [activeLLM,setActiveLLM]=useState("claude");
+
+  // ── Notes / Journal — persisted to localStorage ──────────────────────────
+  const NOTE_TAGS = ["sleep","food","workout","mindset","goals","recovery","body","general"];
+  const [notes,setNotes]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_notes")) || []; } catch { return []; }
+  });
+  useEffect(()=>{ localStorage.setItem("bt_notes", JSON.stringify(notes)); }, [notes]);
+  const [noteDraft,setNoteDraft]=useState({text:"",tags:[],date:""});
+  const [noteFilter,setNoteFilter]=useState("all"); // "all" or a tag
+  const addNote = () => {
+    if(!noteDraft.text.trim()) return;
+    const now = new Date();
+    const dateKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const timeStr = now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    setNotes(prev => [{
+      id: Date.now(),
+      text: noteDraft.text.trim(),
+      tags: noteDraft.tags.length ? noteDraft.tags : ["general"],
+      date: noteDraft.date || dateKey,
+      time: timeStr,
+      createdAt: now.toISOString(),
+    }, ...prev]);
+    setNoteDraft({text:"",tags:[],date:""});
+  };
+  const deleteNote = (id) => setNotes(prev => prev.filter(n => n.id !== id));
+  // Build notes context string for AI coaches — last 30 days of notes grouped by date
+  const buildNotesContext = useCallback(() => {
+    if (!notes.length) return "";
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const recent = notes.filter(n => new Date(n.createdAt) >= cutoff);
+    if (!recent.length) return "";
+    // Group by date
+    const byDate = {};
+    recent.forEach(n => {
+      const d = n.date || n.createdAt.slice(0,10);
+      if(!byDate[d]) byDate[d]=[];
+      byDate[d].push(n);
+    });
+    const lines = ["━━ PERSONAL NOTES & JOURNAL (last 30 days) ━━"];
+    Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date,dayNotes])=>{
+      lines.push(`▸ ${date}`);
+      dayNotes.forEach(n=>{
+        lines.push(`  [${n.tags.join(",")}] ${n.text}`);
+      });
+    });
+    return lines.join("\n");
+  }, [notes]);
   const [analyses,setAnalyses]=useState({});
   const [workout,setWorkout]=useState("");
   const [loading,setLoading]=useState({});
@@ -718,7 +785,7 @@ export default function App() {
   const [photos,setPhotos]=useState([]);
   const [photoLabels,setPhotoLabels]=useState([]);
   const [photoAnalysis,setPhotoAnalysis]=useState("");
-  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,activity:true,training:true,volByGroup:true,measurements:true});
+  const [expanded,setExpanded]=useState({body:true,segmental:true,sleep:true,nutrition:true,mealTiming:true,activity:true,training:true,volByGroup:true,measurements:true});
   const [groupOrder,setGroupOrder]=useState(()=>{
     try { return JSON.parse(localStorage.getItem("bt_group_order")) || GROUPS.map(g=>g.id); }
     catch { return GROUPS.map(g=>g.id); }
@@ -741,6 +808,7 @@ export default function App() {
   const [apiError,setApiError]=useState("");
   const [showApiSetup,setShowApiSetup]=useState(false);
   const [liveHistory,setLiveHistory]=useState([]); // real 90-day history from API
+  const [importMeta,setImportMeta]=useState({}); // { fitbod_last_import, trainerize_last_import, ... }
   const pollRef=useRef(null);
   const fileRef=useRef();
 
@@ -772,6 +840,12 @@ export default function App() {
           }
         })
         .catch(() => {}); // silent — history is bonus
+
+      // Fetch import metadata (last Fitbod/Trainerize import timestamps)
+      fetch(`${base}/meta`, { headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(m => { if(m) setImportMeta(m); })
+        .catch(() => {}); // silent
     } catch(e) {
       setApiStatus("error");
       const msg = e.message;
@@ -927,6 +1001,16 @@ export default function App() {
       ].filter(Boolean);
       if (nutr.length) lines.push(`  NUTRITION: ${nutr.join(" | ")}`);
 
+      // Meal timing
+      const mealT = [
+        h.breakfastTime ? `breakfast@${h.breakfastTime}${h.breakfastCals?`(${fi(h.breakfastCals)}kcal)`:""}` : null,
+        h.lunchTime     ? `lunch@${h.lunchTime}${h.lunchCals?`(${fi(h.lunchCals)}kcal)`:""}` : null,
+        h.dinnerTime    ? `dinner@${h.dinnerTime}${h.dinnerCals?`(${fi(h.dinnerCals)}kcal)`:""}` : null,
+        h.lastMealTime  ? `lastMeal@${h.lastMealTime}` : null,
+        h.snackCals     ? `snacks:${fi(h.snackCals)}kcal` : null,
+      ].filter(Boolean);
+      if (mealT.length) lines.push(`  MEAL TIMING: ${mealT.join(" | ")}`);
+
       // Activity
       const act = [
         h.steps          ? `steps:${Math.round(Number(h.steps)).toLocaleString()}` : null,
@@ -1039,12 +1123,14 @@ SEGMENTAL MUSCLE: ${mus||"not yet entered"}
 MEASUREMENTS: ${measurementFields||"not yet entered — add in Manual tab"}
 SLEEP (Oura): Score ${d.sleepScore}/100 | ${d.sleepDur}h total | Deep ${d.deepSleep}h | REM ${d.remSleep}h | HRV ${d.hrv}ms | RHR ${d.restingHR}bpm | Readiness ${d.readiness}/100
 NUTRITION (MFP): ${d.calories}kcal | Protein ${d.protein}g | Carbs ${d.carbs}g | Fat ${d.fat}g | Fiber ${d.fiber}g | Water ${d.water}L
+MEAL TIMING: Breakfast ${d.breakfastTime||"—"} ${d.breakfastCals?`(${d.breakfastCals}kcal)`:""}| Lunch ${d.lunchTime||"—"} ${d.lunchCals?`(${d.lunchCals}kcal)`:""}| Dinner ${d.dinnerTime||"—"} ${d.dinnerCals?`(${d.dinnerCals}kcal)`:""}| Last meal ${d.lastMealTime||"—"} | Snacks ${d.snackCals||"—"}kcal
 ACTIVITY (Apple): ${Number(d.steps).toLocaleString()} steps | ${d.calsBurned}kcal burned | Avg HR ${d.avgHR}bpm | VO2 ${d.vo2max}
 TRAINING: ${d.workoutType||"Rest"} ${d.workoutDur?d.workoutDur+"min":""} | Volume ${d.workoutVol?Math.round(d.workoutVol).toLocaleString()+"lbs":"—"} | Sets ${d.fitbodSets||"—"} | Reps ${d.fitbodTotalReps||"—"} | Max ${d.fitbodMaxWeightLbs||"—"}lbs
 GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const history = buildHistory(coachId||"progress");
-    return `${snapshot}\n\n${history}`;
-  },[today,manual,liveData,buildHistory]);
+    const notesCtx = buildNotesContext();
+    return `${snapshot}\n\n${history}${notesCtx?`\n\n${notesCtx}`:""}`;
+  },[today,manual,liveData,buildHistory,buildNotesContext]);
 
   const [claudeKey,setClaudeKey]=useState(()=>localStorage.getItem("bt_claude_key")||"");
   // Generate a complete CSV of all 30-day data — every field, every source.
@@ -1094,6 +1180,11 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       {k:"rightForearmIn",l:"Right Forearm (in)"},{k:"leftForearmIn",l:"Left Forearm (in)"},
       {k:"rightThighIn",l:"Right Thigh (in)"},{k:"leftThighIn",l:"Left Thigh (in)"},
       {k:"rightCalfIn",l:"Right Calf (in)"},{k:"leftCalfIn",l:"Left Calf (in)"},
+      // Meal timing (manual)
+      {k:"breakfastTime",l:"Breakfast Time"},{k:"lunchTime",l:"Lunch Time"},
+      {k:"dinnerTime",l:"Dinner Time"},{k:"lastMealTime",l:"Last Meal Time"},
+      {k:"breakfastCals",l:"Breakfast Cals (kcal)"},{k:"lunchCals",l:"Lunch Cals (kcal)"},
+      {k:"dinnerCals",l:"Dinner Cals (kcal)"},{k:"snackCals",l:"Snack Cals (kcal)"},
       // Per-muscle volume (Fitbod)
       {k:"volChest",l:"Chest Vol (lbs)"},{k:"repsChest",l:"Chest Reps"},{k:"setsChest",l:"Chest Sets"},{k:"maxChest",l:"Chest Max (lbs)"},
       {k:"volBack",l:"Back Vol (lbs)"},{k:"repsBack",l:"Back Reps"},{k:"setsBack",l:"Back Sets"},{k:"maxBack",l:"Back Max (lbs)"},
@@ -1108,6 +1199,60 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const rows = hist.map(h => FIELDS.map(f => { const v=h[f.k]; return (v===null||v===undefined)?"":String(v); }).join(","));
     return [header,...rows].join("\n");
   }, [liveHistory]);
+
+  // ── Per-source last-seen dates — derived from liveHistory ─────────────────
+  // For auto-synced sources (Oura, MFP, Apple, Hume) we derive the most recent
+  // day that source contributed data. For FITBOD we prefer the explicit
+  // import timestamp from importMeta (set by the import script).
+  const SOURCE_SIGNAL = {
+    "HUME":          h => h.weight>0 || h.bodyFat>0,
+    "OURA":          h => h.sleepScore>0 || h.hrv>0,
+    "MYFITNESSPAL":  h => h.calories>0 || h.protein>0,
+    "APPLE HEALTH":  h => h.steps>0 || h.calsBurned>0,
+    "FITBOD":        h => h.fitbodSets>0 || h.workoutVol>0,
+    "MANUAL":        h => h.waistIn>0 || h.chestIn>0 || h.trunkFat>0,
+  };
+  // Staleness thresholds (days) — warn if last seen more than N days ago
+  const SOURCE_STALE = {
+    "HUME":14, "OURA":2, "MYFITNESSPAL":2, "APPLE HEALTH":2, "FITBOD":7, "MANUAL":30,
+  };
+
+  const sourceMeta = useMemo(() => {
+    const hist = liveHistory && liveHistory.length > 0 ? liveHistory : [];
+    const result = {};
+    for (const [src, signal] of Object.entries(SOURCE_SIGNAL)) {
+      // For FITBOD: prefer the explicit import timestamp from /meta API
+      if (src === "FITBOD" && importMeta.fitbod_last_import) {
+        result[src] = {
+          lastDate:   importMeta.fitbod_newest_date || null,
+          lastRun:    importMeta.fitbod_last_import,   // ISO timestamp of import script
+          daysAgo:    Math.floor((Date.now() - new Date(importMeta.fitbod_last_import).getTime()) / 86400000),
+          source:     "import",
+          extra:      importMeta.fitbod_date_range || null,
+        };
+        continue;
+      }
+      // For all others: find most recent history entry that has this source's data
+      const match = hist.find(h => signal(h));
+      if (!match) { result[src] = null; continue; }
+      // Derive a date key from the entry
+      const raw = match.syncDate || match.date || null;
+      let dateKey = null;
+      if (raw) {
+        const hasYear = /\b\d{4}\b/.test(raw);
+        const now = new Date();
+        const p = hasYear ? new Date(raw) : (() => {
+          const d = new Date(raw + ", " + now.getFullYear());
+          if (!isNaN(d.getTime()) && d > new Date(Date.now() + 86400000)) d.setFullYear(d.getFullYear()-1);
+          return d;
+        })();
+        if (!isNaN(p.getTime())) dateKey = p.toISOString().slice(0,10);
+      }
+      const daysAgo = dateKey ? Math.floor((Date.now() - new Date(dateKey).getTime()) / 86400000) : null;
+      result[src] = { lastDate: dateKey, daysAgo, source: "history" };
+    }
+    return result;
+  }, [liveHistory, importMeta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // callClaude: when csvData is provided, sends it as a proper document attachment
   // so Claude can reference it as a structured file (not just text in the prompt).
@@ -1166,26 +1311,122 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     return j.candidates?.[0]?.content?.parts?.[0]?.text || "No response";
   };
 
+  // ── Multi-turn chat variants — accept full messages[] array ───────────────
+  const callClaudeChat = async (sys, messages) => {
+    const key = claudeKey;
+    if(!key) throw new Error("Enter your Anthropic API key to use Claude");
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,
+        messages:messages.map(m=>({role:m.role,content:m.content}))})});
+    const j=await r.json(); if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+    return j.content[0].text;
+  };
+  const callGPTChat = async (sys, messages, key) => {
+    const r=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+      body:JSON.stringify({model:"gpt-4o",messages:[{role:"system",content:sys},...messages.map(m=>({role:m.role,content:m.content}))]})});
+    const j=await r.json(); if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
+    return j.choices[0].message.content;
+  };
+  const callGrokChat = async (sys, messages, key) => {
+    const r=await fetch("https://api.x.ai/v1/chat/completions",{method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},
+      body:JSON.stringify({model:"grok-3",messages:[{role:"system",content:sys},...messages.map(m=>({role:m.role,content:m.content}))]})});
+    const j=await r.json(); if(j.error)throw new Error(j.error.message||j.error); return j.choices[0].message.content;
+  };
+  const callGeminiChat = async (sys, messages, key) => {
+    // Gemini requires alternating user/model turns and uses "model" not "assistant"
+    const contents = messages.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}));
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system_instruction:{parts:[{text:sys}]},contents,generationConfig:{maxOutputTokens:2000}})});
+    const j=await r.json();
+    if(j.error) throw new Error(j.error.message||JSON.stringify(j.error));
+    return j.candidates?.[0]?.content?.parts?.[0]?.text||"No response";
+  };
+
+  // ── Chat thread state ─────────────────────────────────────────────────────
+  // Threads keyed by `thread_${coachId}_${llmId}` — one persistent thread per coach/LLM
+  const [chatThreads,setChatThreads]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem("bt_chat_threads"))||{};}catch{return {};}
+  });
+  useEffect(()=>{localStorage.setItem("bt_chat_threads",JSON.stringify(chatThreads));},[chatThreads]);
+  const [chatDraft,setChatDraft]=useState({});    // { [coachId]: string }
+  const [chatLoading,setChatLoading]=useState({}); // { [threadKey]: bool }
+
+  const sendChat = async (coachId, llmId) => {
+    const msg=(chatDraft[coachId]||"").trim(); if(!msg) return;
+    const l=LLMS.find(x=>x.id===llmId);
+    if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
+    const coach=COACHES.find(c=>c.id===coachId);
+    const now=new Date();
+    const dateKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const threadKey=`thread_${coachId}_${llmId}`;
+    const dailyKey=`daily_${coachId}_${llmId}_${dateKey}`;
+    const dailyResp=analyses[dailyKey]||"";
+    const dailyPromptText=coachPrompts[coachId]||coach.defaultDailyPrompt;
+    const existingThread=chatThreads[threadKey]||[];
+
+    // Add user message immediately (optimistic)
+    const userMsg={role:"user",content:msg,ts:now.toISOString(),type:"qa"};
+    const newThread=[...existingThread,userMsg];
+    setChatThreads(p=>({...p,[threadKey]:newThread}));
+    setChatDraft(p=>({...p,[coachId]:""}));
+    setChatLoading(p=>({...p,[threadKey]:true}));
+
+    try {
+      const sys=coach.sys;
+      const todaySnap=ctx(coachId);
+      // Build full message history:
+      // If daily coaching has been run, seed conversation with it so the coach has context.
+      // If not, seed with data context + user question.
+      const seedMessages = dailyResp ? [
+        {role:"user",    content:`${todaySnap}\n\n${dailyPromptText}`},
+        {role:"assistant",content:dailyResp},
+        ...existingThread.map(m=>({role:m.role,content:m.content})),
+        {role:"user",    content:msg},
+      ] : [
+        {role:"user", content:`${todaySnap}\n\n${msg}`},
+      ];
+
+      let res;
+      if(llmId==="claude")       res=await callClaudeChat(sys, seedMessages);
+      else if(llmId==="gpt4")    res=await callGPTChat(sys, seedMessages, apiKeys.gpt4);
+      else if(llmId==="grok")    res=await callGrokChat(sys, seedMessages, apiKeys.grok);
+      else if(llmId==="gemini")  res=await callGeminiChat(sys, seedMessages, apiKeys.gemini);
+      else throw new Error(`Unknown LLM: ${llmId}`);
+
+      const assistantMsg={role:"assistant",content:res,ts:new Date().toISOString(),type:"qa"};
+      setChatThreads(p=>({...p,[threadKey]:[...newThread,assistantMsg]}));
+    } catch(e) {
+      const errMsg={role:"assistant",content:`⚠ ${e.message}`,ts:new Date().toISOString(),type:"qa"};
+      setChatThreads(p=>({...p,[threadKey]:[...newThread,errMsg]}));
+    }
+    setChatLoading(p=>({...p,[threadKey]:false}));
+  };
+
   const COACHES = [
     {
       id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
       sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
-      defaultDailyPrompt:`Analyze ALL of my data — segmental body fat % by region (trunk, arms, legs), body measurements (waist, chest, arms, thighs), per-muscle-group training volume, body composition trend, recovery (HRV, sleep, readiness), and nutrition — then build me the optimal 1–4 week workout plan to maximize muscle growth and accelerate fat loss toward 10% body fat.
+      defaultDailyPrompt:`Analyze ALL of my body data — segmental body fat % by region (trunk, right arm, left arm, right leg, left leg), body measurements (waist, chest, hips, shoulders, biceps, thighs, calves), per-muscle-group training volume over 30 days, body composition trend (weight, body fat %, lean mass), recovery (HRV, sleep score, readiness), and nutrition — then design the best possible workout for me today and a 1–4 week training plan.
 
-WORKOUT CONSTRAINTS (non-negotiable):
-• Exactly 7 exercises per session
-• Exactly 4 sets per exercise (28 sets total)
-• Maximum 75 minutes per session including warm-up and cool-down
-• Structure: 1 compound warm-up + 3 primary compound lifts + 2 isolation/accessory + 1 finisher
+HARD CONSTRAINTS (non-negotiable):
+• Maximum 7 exercises per session
+• Maximum 4 sets per exercise
+• Maximum 75 minutes total
+
+Everything else — exercise selection, exercise type, movement patterns, order, rep ranges, tempo, rest periods, training split — you decide entirely based on what my body data tells you I need most. Use my segmental fat % to identify which regions need priority work. Use my 30-day per-muscle volume to identify what has been undertrained or overtrained. Use my recovery metrics to calibrate today's intensity. Let the data drive every decision — do not default to generic program templates.
 
 Structure your response as:
-1. BODY COMPOSITION ANALYSIS: Using my segmental fat % data (trunk, right arm, left arm, right leg, left leg) and body measurements — which regions carry the most fat and which muscles are underdeveloped? This determines exercise priority.
-2. TRAINING HISTORY ANALYSIS: Which muscle groups are lagging based on 30-day volume data? What is my current training frequency and volume per muscle group?
-3. RECOVERY ANALYSIS: How are my HRV and readiness trending? What intensity is appropriate today?
-4. 1–4 WEEK PROGRAM: Week-by-week plan. Each day shows: workout type, exactly 7 exercises with sets×reps×load×tempo×rest. Build the program to target my highest-fat/lowest-volume regions first.
-5. TODAY'S WORKOUT: The exact 7 exercises for today — exercise name, 4 sets × reps × weight, tempo (e.g. 3-1-2-0), rest period. Total time should not exceed 75 min. Show time estimate.
+1. BODY COMPOSITION ANALYSIS: What does my segmental fat % (by region) and body measurements reveal about where I carry fat and which muscle groups are underdeveloped? Be specific — use the actual % numbers.
+2. TRAINING HISTORY ANALYSIS: Which muscle groups are lagging in volume over the last 30 days? What's the distribution? What does that tell you about what needs priority?
+3. RECOVERY ANALYSIS: What do my HRV, readiness, and sleep scores over the last 7 days tell you about appropriate intensity today?
+4. 1–4 WEEK PROGRAM: Your recommended training plan based on my data — day-by-day, showing exercises, sets×reps×load. Justify every choice with my body data.
+5. TODAY'S WORKOUT: Exactly what to do today — up to 7 exercises, up to 4 sets each. For each exercise: sets×reps×weight, rest period, why this exercise was chosen based on my data.
 
-All recommendations must be grounded in my actual segmental fat %, measurements, and training data.`,
+All decisions must be justified by my actual numbers. Do not prescribe a generic program — design this for my specific body.`,
       questions:[
         {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
         {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
@@ -1286,7 +1527,71 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
   });
   useEffect(()=>{ localStorage.setItem("bt_coach_prompts",JSON.stringify(coachPrompts)); },[coachPrompts]);
 
-  const analyze = async (llmId, coachId, questionId) => {
+  // ── Notification permission state ──────────────────────────────────────────
+  const [notifPermission, setNotifPermission] = useState(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "default"
+  );
+  const requestNotifPermission = async () => {
+    if (typeof Notification === "undefined") return;
+    const perm = await Notification.requestPermission();
+    setNotifPermission(perm);
+  };
+
+  // Refs so the notification interval always has the latest analyze/key/llm state
+  // without needing to re-create the interval on every render.
+  const analyzeRef    = useRef(null);
+  const claudeKeyRef  = useRef(claudeKey);
+  const coachLLMsRef  = useRef(coachLLMs);
+  claudeKeyRef.current  = claudeKey;   // updated every render — no stale closure
+  coachLLMsRef.current  = coachLLMs;
+
+  // Fire coaching notifications + auto-run scheduled coach (weekdays 5am, weekends 8am)
+  // Only fires if the tab is open and permission is granted
+  useEffect(() => {
+    if (notifPermission !== "granted") return;
+    const NOTIFY_HOUR_WEEKDAY = 5;  // 5:00 AM Mon–Fri
+    const NOTIFY_HOUR_WEEKEND = 8;  // 8:00 AM Sat–Sun
+    const SCHEDULE = { workout:"Saturday", food:"Sunday", sleep:"Monday", progress:"Tuesday", celebrate:"Wednesday" };
+    const DOW_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    let lastFiredDate = "";
+    const check = () => {
+      const now = new Date();
+      const dow = now.getDay(); // 0=Sun, 6=Sat
+      const isWeekend = dow === 0 || dow === 6;
+      const targetHour = isWeekend ? NOTIFY_HOUR_WEEKEND : NOTIFY_HOUR_WEEKDAY;
+      const dateKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+      if (now.getHours() === targetHour && now.getMinutes() === 0 && dateKey !== lastFiredDate) {
+        lastFiredDate = dateKey;
+        // Find today's scheduled coach
+        const todayName = DOW_NAMES[dow];
+        const todayCoachId = Object.entries(SCHEDULE).find(([,day])=>day===todayName)?.[0];
+        const coachObj = todayCoachId ? COACHES.find(c=>c.id===todayCoachId) : null;
+        // 1. Fire browser notification
+        new Notification("BioTrack Daily Coaching", {
+          body: coachObj
+            ? `⚡ Auto-running ${coachObj.name} with your latest data...`
+            : "BioTrack is running your daily coaching session.",
+          icon: "/favicon.ico",
+          tag: "biotrack-coaching",
+        });
+        // 2. Auto-run the scheduled coach (requires app to be open + API key set)
+        if (todayCoachId && analyzeRef.current) {
+          const llm = coachLLMsRef.current[todayCoachId] || "claude";
+          if (llm === "claude" && claudeKeyRef.current) {
+            analyzeRef.current(llm, todayCoachId, "daily");
+          } else if (llm !== "claude") {
+            // Non-Claude LLMs — try regardless (analyze handles missing key modal)
+            analyzeRef.current(llm, todayCoachId, "daily");
+          }
+        }
+      }
+    };
+    const interval = setInterval(check, 60000); // check every minute
+    check(); // also check immediately on mount/permission grant
+    return () => clearInterval(interval);
+  }, [notifPermission]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const analyze = async (llmId, coachId, questionId) => { // eslint-disable-line no-use-before-define
     const l=LLMS.find(x=>x.id===llmId);
     if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
     const coach = COACHES.find(c=>c.id===coachId);
@@ -1324,9 +1629,21 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
         res=`[${l.name} — tap 🔑 ADD KEY to enable]`;
       }
       setAnalyses(p=>({...p,[qKey]:res}));
+      if(questionId === "daily") {
+        const persistKey = `thread_${coachId}_${llmId}`;
+        const now2 = new Date();
+        const dateKey2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,"0")}-${String(now2.getDate()).padStart(2,"0")}`;
+        setChatThreads(p => ({
+          ...p,
+          [persistKey]: [...(p[persistKey]||[]), {
+            role:"assistant", content:res, ts:now2.toISOString(), type:"daily", date:dateKey2
+          }]
+        }));
+      }
     } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
     setLoading(p=>({...p,[qKey]:false}));
   };
+  analyzeRef.current = analyze; // keep ref current so notification auto-run always has latest version
 
   const getWorkout = async () => {
     setLoading(p=>({...p,workout:true}));
@@ -1514,7 +1831,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
       {/* ── NAV */}
       <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto"}}>
-        {[["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["workout","💪 WORKOUT"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
+        {[["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
           <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 20px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"2px",whiteSpace:"nowrap",transition:"color 0.15s"}}>
             {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"5px"}}>●</span>}
           </button>
@@ -1749,10 +2066,43 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                           <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,-1)}} style={{background:"none",border:"none",color:gi===0?C.dim:C.text3,cursor:gi===0?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▲</button>
                           <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,1)}} style={{background:"none",border:"none",color:gi===sortedGroups.length-1?C.dim:C.text3,cursor:gi===sortedGroups.length-1?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▼</button>
                         </div>
-                        <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))} style={{display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",flex:1}}>
+                        <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))} style={{display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",flex:1,flexWrap:"wrap"}}>
                           <span style={{color:g.col,fontSize:"11px"}}>{expanded[g.id]?"▾":"▸"}</span>
                           <span style={{color:g.col,fontSize:"11px",letterSpacing:"3px",fontWeight:"bold"}}>{g.name}</span>
                           <span style={{fontSize:"9px",background:g.col+"22",color:g.col,padding:"2px 10px",borderRadius:"3px",letterSpacing:"1.5px",fontWeight:"600"}}>{g.src}</span>
+                          {(() => {
+                            const meta = sourceMeta[g.src];
+                            const staleThresh = SOURCE_STALE[g.src] ?? 7;
+                            const neverMsg = {
+                              "FITBOD":       "⚠ never imported — run import-fitbod.js",
+                              "MANUAL":       "no measurements entered yet",
+                              "HUME":         "no body scan data yet",
+                              "OURA":         "no Oura data yet",
+                              "MYFITNESSPAL": "no MFP data yet",
+                              "APPLE HEALTH": "no Apple Health data yet",
+                            };
+                            if (!meta) {
+                              // Only show "never" warning for FITBOD and MANUAL — others are auto-synced
+                              if (g.src === "FITBOD" || g.src === "MANUAL") {
+                                return <span style={{fontSize:"9px",color:"#f87171",letterSpacing:"1px"}}>{neverMsg[g.src]||"no data yet"}</span>;
+                              }
+                              return null;
+                            }
+                            const { daysAgo, lastDate, source, extra } = meta;
+                            const stale = daysAgo !== null && daysAgo > staleThresh;
+                            const age = daysAgo === null ? "unknown"
+                              : daysAgo === 0 ? "today"
+                              : daysAgo === 1 ? "yesterday"
+                              : `${daysAgo}d ago`;
+                            const verb = source === "import" ? "imported" : "synced";
+                            const through = lastDate ? ` · through ${lastDate}` : "";
+                            const extraNote = extra && source === "import" ? "" : ""; // date range shown via `through`
+                            return (
+                              <span style={{fontSize:"9px",color:stale?"#f87171":"#4ade80",letterSpacing:"1px",display:"flex",alignItems:"center",gap:"4px"}}>
+                                {stale ? "⚠" : "✓"} {verb} {age}{through}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                     </td></tr>
@@ -2005,6 +2355,66 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             );
           })()}
 
+          {/* Notification Schedule Panel */}
+          {(() => {
+            const DOW = new Date().getDay();
+            const isWeekend = DOW === 0 || DOW === 6;
+            const nextNotifHour = isWeekend ? 8 : 5;
+            const now = new Date();
+            const nextFire = new Date(now);
+            nextFire.setHours(nextNotifHour, 0, 0, 0);
+            if (nextFire <= now) nextFire.setDate(nextFire.getDate() + 1);
+            const diffMs = nextFire - now;
+            const diffH = Math.floor(diffMs / 3600000);
+            const diffM = Math.floor((diffMs % 3600000) / 60000);
+            const countdownStr = diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+            return (
+              <div style={{...panel,marginBottom:"16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px",padding:"12px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"20px",flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{fontSize:"9px",color:C.text3,letterSpacing:"2px",marginBottom:"3px"}}>🔔 COACHING NOTIFICATIONS</div>
+                    <div style={{display:"flex",gap:"16px",flexWrap:"wrap"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                        <span style={{fontSize:"9px",color:C.dim}}>MON–FRI</span>
+                        <span style={{fontSize:"14px",fontWeight:"bold",color:"#60a5fa",fontFamily:"'Courier New',monospace"}}>5:00 AM</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                        <span style={{fontSize:"9px",color:C.dim}}>SAT–SUN</span>
+                        <span style={{fontSize:"14px",fontWeight:"bold",color:"#fbbf24",fontFamily:"'Courier New',monospace"}}>8:00 AM</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:"9px",color:C.text3,letterSpacing:"2px",marginBottom:"3px"}}>NEXT NOTIFICATION</div>
+                    <div style={{fontSize:"12px",color:"#4ade80",fontFamily:"'Courier New',monospace"}}>
+                      {notifPermission === "granted"
+                        ? `⏱ in ${countdownStr}`
+                        : notifPermission === "denied"
+                        ? "🚫 blocked in browser"
+                        : "— not enabled"}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  {notifPermission === "granted" ? (
+                    <div style={{fontSize:"11px",color:"#4ade80",display:"flex",alignItems:"center",gap:"6px"}}>
+                      <span>✓</span><span>Notifications ON</span>
+                    </div>
+                  ) : notifPermission === "denied" ? (
+                    <div style={{fontSize:"10px",color:"#f87171",maxWidth:"200px",textAlign:"right"}}>
+                      Blocked — enable in browser site settings
+                    </div>
+                  ) : (
+                    <button onClick={requestNotifPermission}
+                      style={{...bFill("#60a5fa"),padding:"8px 16px",fontSize:"11px"}}>
+                      🔔 ENABLE NOTIFICATIONS
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Active Coach Panel */}
           <div style={{...panel,borderColor:activeCoachObj.col+"40"}}>
             {/* Header with model picker */}
@@ -2059,7 +2469,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 <div style={{fontSize:"10px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"6px"}}>
                   📅 TODAY'S COACHING ({todayDateKey})
                 </div>
-                <div style={{background:"#080814",border:`1px solid ${activeCoachObj.col}30`,borderRadius:"4px",padding:"14px",fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"600px",overflowY:"auto"}}>
+                <div style={{background:"#080814",border:`1px solid ${activeCoachObj.col}30`,borderRadius:"4px",padding:"14px",fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
                   {analyses[dailyKey]}
                 </div>
               </div>
@@ -2070,6 +2480,107 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 <div style={{fontSize:"10px",color:C.dim,marginTop:"4px"}}>Your prompt and response auto-save for today</div>
               </div>
             )}
+
+            {/* ── Q&A Chat Thread ─────────────────────────────────────── */}
+            {(() => {
+              const threadKey=`thread_${activeCoachObj.id}_${activeLLM}`;
+              const thread=chatThreads[threadKey]||[];
+              const isWaiting=chatLoading[threadKey];
+              const chatRef = null; // scroll handled via CSS
+              return (
+                <div style={{borderTop:`1px solid ${activeCoachObj.col}30`,paddingTop:"14px",marginBottom:"14px"}}>
+                  <div style={{fontSize:"10px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"10px"}}>
+                    💬 Q&A — ASK A FOLLOW-UP
+                  </div>
+
+                  {/* Thread messages */}
+                  {thread.length > 0 && (
+                    <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"14px",maxHeight:"600px",overflowY:"auto"}}>
+                      {thread.map((msg,i)=>{
+                        const isUser = msg.role==="user";
+                        return (
+                          <div key={i} style={{
+                            display:"flex",
+                            flexDirection:"column",
+                            alignItems: isUser?"flex-end":"flex-start",
+                          }}>
+                            <div style={{
+                              maxWidth:"88%",
+                              background: isUser?"#0e0e1e":activeCoachObj.col+"12",
+                              border:`1px solid ${isUser?"#ffffff18":activeCoachObj.col+"40"}`,
+                              borderLeft: isUser?undefined:`3px solid ${activeCoachObj.col}`,
+                              borderRadius:"4px",
+                              padding:"10px 14px",
+                              fontSize:"13px",
+                              lineHeight:"1.75",
+                              whiteSpace:"pre-wrap",
+                              color: isUser?C.text2:C.text1,
+                            }}>
+                              {!isUser && (
+                                <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
+                                  {activeCoachObj.icon} {activeCoachObj.name}
+                                </div>
+                              )}
+                              {msg.content}
+                            </div>
+                            <div style={{fontSize:"9px",color:C.dim,marginTop:"3px",paddingLeft:"4px",paddingRight:"4px"}}>
+                              {isUser?"You":"Coach"} · {msg.ts ? new Date(msg.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : ""}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {isWaiting && (
+                        <div style={{display:"flex",alignItems:"flex-start"}}>
+                          <div style={{background:activeCoachObj.col+"12",border:`1px solid ${activeCoachObj.col}40`,borderLeft:`3px solid ${activeCoachObj.col}`,borderRadius:"4px",padding:"10px 14px"}}>
+                            <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
+                              {activeCoachObj.icon} {activeCoachObj.name}
+                            </div>
+                            <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                              {[0,1,2].map(j=>(
+                                <div key={j} style={{width:"6px",height:"6px",borderRadius:"50%",background:activeCoachObj.col,
+                                  animation:`pulse 1.2s ease-in-out ${j*0.2}s infinite`,opacity:0.7}}/>
+                              ))}
+                              <span style={{fontSize:"11px",color:C.text3,marginLeft:"6px"}}>thinking...</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Chat input */}
+                  <div style={{display:"flex",gap:"8px",alignItems:"flex-end"}}>
+                    <textarea
+                      value={chatDraft[activeCoachObj.id]||""}
+                      onChange={e=>setChatDraft(p=>({...p,[activeCoachObj.id]:e.target.value}))}
+                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat(activeCoachObj.id,activeLLM);}}}
+                      placeholder={analyses[dailyKey]
+                        ? `Ask ${activeCoachObj.name} a follow-up... (Enter to send, Shift+Enter for new line)`
+                        : `Ask ${activeCoachObj.name} anything about your data...`}
+                      disabled={isWaiting}
+                      style={{...inp,flex:1,minHeight:"52px",maxHeight:"160px",resize:"vertical",
+                        fontSize:"13px",lineHeight:"1.6",opacity:isWaiting?0.5:1}}
+                    />
+                    <button onClick={()=>sendChat(activeCoachObj.id,activeLLM)} disabled={isWaiting||!chatDraft[activeCoachObj.id]?.trim()}
+                      style={{...bFill(activeCoachObj.col),padding:"12px 18px",fontSize:"12px",flexShrink:0,
+                        opacity:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?0.4:1,
+                        cursor:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?"default":"pointer",
+                        alignSelf:"flex-end"}}>
+                      {isWaiting?"⟳":"▶ SEND"}
+                    </button>
+                  </div>
+
+                  {thread.length > 0 && (
+                    <div style={{display:"flex",justifyContent:"flex-end",marginTop:"6px"}}>
+                      <button onClick={()=>setChatThreads(p=>{const n={...p};delete n[threadKey];return n;})}
+                        style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:"9px",letterSpacing:"1px",padding:"2px 0"}}>
+                        ✕ clear thread
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Collapsible Preset Questions */}
             <div style={{borderTop:`1px solid ${C.bord}`,paddingTop:"14px"}}>
@@ -2117,6 +2628,210 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             <pre style={{fontSize:"11px",color:C.text2,overflow:"auto",margin:0,lineHeight:"1.8"}}>{ctx()}</pre>
           </div>
         </div>
+        );
+      })()}
+
+      {/* ══════════ LOG TAB ══════════ */}
+      {tab==="log" && (() => {
+        // Gather all persistent thread entries
+        const allEntries = [];
+        Object.keys(chatThreads).forEach(key => {
+          if(!key.startsWith("thread_")) return;
+          const parts = key.replace("thread_","").split("_");
+          // key format: thread_${coachId}_${llmId}
+          // coachId could be multi-part (e.g. "workout"), llmId is last part
+          const llmId = parts[parts.length-1];
+          const coachId = parts.slice(0,parts.length-1).join("_");
+          const coachObj = COACHES.find(c=>c.id===coachId);
+          const llmObj = LLMS.find(l=>l.id===llmId);
+          const msgs = chatThreads[key]||[];
+          msgs.forEach(m => {
+            allEntries.push({...m, coachId, llmId, coachObj, llmObj, threadKey:key});
+          });
+        });
+
+        // Sort newest first
+        allEntries.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+
+        const [logCoachFilter,setLogCoachFilter]=useState("all");
+        const [logTypeFilter,setLogTypeFilter]=useState("all");
+        const [expandedEntries,setExpandedEntries]=useState({});
+
+        const filtered = allEntries.filter(e=>{
+          if(logCoachFilter!=="all" && e.coachId!==logCoachFilter) return false;
+          if(logTypeFilter==="daily" && e.type!=="daily") return false;
+          if(logTypeFilter==="qa" && e.type!=="qa") return false;
+          return true;
+        });
+
+        // Group by date
+        const groupedByDate = {};
+        filtered.forEach(e => {
+          const d = e.ts ? new Date(e.ts) : new Date();
+          const dk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+          if(!groupedByDate[dk]) groupedByDate[dk] = [];
+          groupedByDate[dk].push(e);
+        });
+        const dateKeys = Object.keys(groupedByDate).sort((a,b)=>b.localeCompare(a));
+
+        const fmtDate = (dk) => {
+          const d = new Date(dk+"T12:00:00");
+          return d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+        };
+
+        const exportLog = () => {
+          const lines = [];
+          allEntries.sort((a,b)=>new Date(a.ts)-new Date(b.ts)).forEach(e => {
+            const coachName = e.coachObj?.name || e.coachId;
+            const llmName = e.llmObj?.name || e.llmId;
+            const ts = e.ts ? new Date(e.ts).toLocaleString() : "";
+            lines.push(`────────────────────────────────────────`);
+            lines.push(`[${ts}] ${coachName} / ${llmName} / ${e.type||"qa"} / ${e.role}`);
+            lines.push(e.content||"");
+            lines.push("");
+          });
+          const blob = new Blob([lines.join("\n")],{type:"text/plain"});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href=url; a.download="coaching-log.txt"; a.click();
+          URL.revokeObjectURL(url);
+        };
+
+        return (
+          <div style={{padding:"16px",maxWidth:"900px",margin:"0 auto"}}>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px",flexWrap:"wrap",gap:"10px"}}>
+              <div>
+                <div style={{fontSize:"16px",fontWeight:"bold",letterSpacing:"3px",color:C.text1}}>📚 COACHING LOG</div>
+                <div style={{fontSize:"11px",color:C.text3,marginTop:"3px"}}>PERSISTENT HISTORY · ALL COACHES</div>
+              </div>
+              <button onClick={exportLog} style={{...bOut(C.text3),fontSize:"10px",padding:"7px 14px"}}>⬇ EXPORT .TXT</button>
+            </div>
+
+            {/* Filter bar */}
+            <div style={{...panel,marginBottom:"16px",padding:"12px 14px"}}>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center",marginBottom:"10px"}}>
+                <span style={{fontSize:"10px",color:C.dim,letterSpacing:"1px",marginRight:"2px"}}>COACH:</span>
+                <button onClick={()=>setLogCoachFilter("all")}
+                  style={{...logCoachFilter==="all"?bFill("#00ff9d"):bOut(C.text3),padding:"4px 10px",fontSize:"10px"}}>
+                  ALL COACHES
+                </button>
+                {COACHES.map(c=>(
+                  <button key={c.id} onClick={()=>setLogCoachFilter(c.id)}
+                    style={{...logCoachFilter===c.id?bFill(c.col):bOut(c.col),padding:"4px 10px",fontSize:"10px"}}>
+                    {c.icon} {c.name}
+                  </button>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:"8px",flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:"10px",color:C.dim,letterSpacing:"1px",marginRight:"2px"}}>TYPE:</span>
+                {[["all","ALL TYPES"],["daily","DAILY BRIEFS"],["qa","Q&A"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setLogTypeFilter(v)}
+                    style={{...logTypeFilter===v?bFill("#a78bfa"):bOut(C.text3),padding:"4px 10px",fontSize:"10px"}}>
+                    {l}
+                  </button>
+                ))}
+                <span style={{fontSize:"10px",color:C.dim,marginLeft:"8px"}}>{filtered.length} entries</span>
+              </div>
+            </div>
+
+            {/* Timeline */}
+            {filtered.length===0 ? (
+              <div style={{...panel,textAlign:"center",padding:"40px"}}>
+                <div style={{fontSize:"36px",marginBottom:"12px",opacity:0.3}}>📚</div>
+                <div style={{fontSize:"13px",color:C.text2}}>No coaching history yet — run your first coach in the AI COACH tab</div>
+              </div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:"0px"}}>
+                {dateKeys.map(dk=>{
+                  const entries = groupedByDate[dk];
+                  return (
+                    <div key={dk}>
+                      {/* Date divider */}
+                      <div style={{display:"flex",alignItems:"center",gap:"10px",margin:"16px 0 10px"}}>
+                        <div style={{flex:1,height:"1px",background:C.bord2}}/>
+                        <div style={{fontSize:"10px",color:C.text3,letterSpacing:"2px",fontWeight:"bold",whiteSpace:"nowrap"}}>━━ {fmtDate(dk)} ━━</div>
+                        <div style={{flex:1,height:"1px",background:C.bord2}}/>
+                      </div>
+
+                      {/* Entries for this date */}
+                      <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+                        {entries.map((e,i)=>{
+                          const eKey = `${e.threadKey}_${e.ts}_${i}`;
+                          const isExpanded = expandedEntries[eKey];
+                          const coachCol = e.coachObj?.col||C.text3;
+                          const ts = e.ts ? new Date(e.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : "";
+
+                          if(e.type==="daily") {
+                            const text = e.content||"";
+                            const preview = text.length>300 ? text.slice(0,300)+"…" : text;
+                            return (
+                              <div key={eKey} style={{...panel,borderColor:coachCol+"40",padding:"14px"}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"10px",flexWrap:"wrap",gap:"6px"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                                    <span style={{fontSize:"18px"}}>{e.coachObj?.icon||"🤖"}</span>
+                                    <div>
+                                      <div style={{fontSize:"11px",color:coachCol,fontWeight:"bold",letterSpacing:"2px"}}>{e.coachObj?.name||e.coachId}</div>
+                                      <div style={{fontSize:"9px",color:C.dim,marginTop:"1px"}}>DAILY BRIEF · {ts}</div>
+                                    </div>
+                                  </div>
+                                  <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                                    {e.llmObj && (
+                                      <span style={{fontSize:"9px",color:e.llmObj.col,border:`1px solid ${e.llmObj.col}60`,borderRadius:"3px",padding:"2px 7px",letterSpacing:"1px",fontWeight:"bold"}}>
+                                        {e.llmObj.icon} {e.llmObj.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{fontSize:"12px",lineHeight:"1.75",whiteSpace:"pre-wrap",color:C.text1}}>
+                                  {isExpanded ? text : preview}
+                                </div>
+                                {text.length>300 && (
+                                  <button onClick={()=>setExpandedEntries(p=>({...p,[eKey]:!p[eKey]}))}
+                                    style={{background:"transparent",border:"none",color:coachCol,cursor:"pointer",fontSize:"10px",marginTop:"8px",padding:"0",letterSpacing:"1px"}}>
+                                    {isExpanded?"▴ show less":"▾ show more"}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // Q&A entry
+                          const isUser = e.role==="user";
+                          return (
+                            <div key={eKey} style={{display:"flex",flexDirection:"column",alignItems:isUser?"flex-end":"flex-start"}}>
+                              <div style={{
+                                maxWidth:"88%",
+                                background: isUser?"#0e0e1e":coachCol+"12",
+                                border:`1px solid ${isUser?"#ffffff18":coachCol+"40"}`,
+                                borderLeft: isUser?undefined:`3px solid ${coachCol}`,
+                                borderRadius:"4px",
+                                padding:"10px 14px",
+                                fontSize:"12px",
+                                lineHeight:"1.75",
+                                whiteSpace:"pre-wrap",
+                                color: isUser?C.text2:C.text1,
+                              }}>
+                                {!isUser && e.coachObj && (
+                                  <div style={{fontSize:"9px",color:coachCol,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
+                                    {e.coachObj.icon} {e.coachObj.name}
+                                  </div>
+                                )}
+                                {e.content}
+                              </div>
+                              <div style={{fontSize:"9px",color:C.dim,marginTop:"3px",paddingLeft:"4px",paddingRight:"4px"}}>
+                                {isUser?"You":"Coach"} · {ts}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         );
       })()}
 
@@ -2183,6 +2898,129 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ══════════ NOTES TAB ══════════ */}
+      {tab==="notes" && (
+        <div style={{padding:"16px",maxWidth:"800px",margin:"0 auto"}}>
+
+          {/* Composer */}
+          <div style={{...panel,marginBottom:"16px",borderColor:"#a78bfa40"}}>
+            {sectionLabel("📓 NEW NOTE")}
+
+            {/* Tag selector */}
+            <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px"}}>
+              {NOTE_TAGS.map(tag=>{
+                const active = noteDraft.tags.includes(tag);
+                const TAG_COL = {sleep:"#a78bfa",food:"#34d399",workout:"#fbbf24",mindset:"#f43f5e",goals:"#00ff9d",recovery:"#60a5fa",body:"#00e5ff",general:"#888"};
+                const col = TAG_COL[tag]||"#888";
+                return (
+                  <button key={tag} onClick={()=>setNoteDraft(p=>({...p,tags:active?p.tags.filter(t=>t!==tag):[...p.tags,tag]}))}
+                    style={{padding:"4px 12px",background:active?col+"25":"transparent",border:`1px solid ${active?col:C.bord2}`,
+                      color:active?col:C.text3,cursor:"pointer",fontSize:"10px",borderRadius:"8px",fontWeight:active?"bold":"normal",
+                      letterSpacing:"1px",fontFamily:"'Courier New',monospace",transition:"all 0.15s"}}>
+                    {tag.toUpperCase()}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Date override (defaults to today) */}
+            <div style={{display:"flex",gap:"10px",alignItems:"center",marginBottom:"10px",flexWrap:"wrap"}}>
+              <span style={{fontSize:"10px",color:C.text3,letterSpacing:"1px"}}>DATE:</span>
+              <input type="date" value={noteDraft.date}
+                onChange={e=>setNoteDraft(p=>({...p,date:e.target.value}))}
+                style={{...inp,padding:"4px 8px",fontSize:"11px",colorScheme:"dark",width:"140px"}}
+                placeholder="today"/>
+              <span style={{fontSize:"10px",color:C.dim}}>leave blank for today</span>
+            </div>
+
+            {/* Text area */}
+            <textarea
+              value={noteDraft.text}
+              onChange={e=>setNoteDraft(p=>({...p,text:e.target.value}))}
+              onKeyDown={e=>{ if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)) addNote(); }}
+              placeholder="Write your note here... e.g. 'Worked late until 8:30pm coding, couldn't fall asleep till 2am. Training felt sluggish today — probably undertapered.' ⌘+Enter to save."
+              style={{...inp,width:"100%",minHeight:"90px",boxSizing:"border-box",fontSize:"13px",lineHeight:"1.7",resize:"vertical",fontFamily:"inherit"}}
+            />
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:"10px"}}>
+              <span style={{fontSize:"10px",color:C.dim}}>
+                {noteDraft.tags.length ? `Tagged: ${noteDraft.tags.join(", ")}` : "No tags selected — will save as general"}
+              </span>
+              <button onClick={addNote} disabled={!noteDraft.text.trim()}
+                style={{...bFill("#a78bfa"),padding:"8px 20px",opacity:noteDraft.text.trim()?1:0.4}}>
+                💾 SAVE NOTE
+              </button>
+            </div>
+          </div>
+
+          {/* Filter bar */}
+          <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"12px",alignItems:"center"}}>
+            <span style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginRight:"4px"}}>FILTER:</span>
+            {["all",...NOTE_TAGS].map(tag=>{
+              const TAG_COL = {sleep:"#a78bfa",food:"#34d399",workout:"#fbbf24",mindset:"#f43f5e",goals:"#00ff9d",recovery:"#60a5fa",body:"#00e5ff",general:"#888",all:"#00ff9d"};
+              const col = TAG_COL[tag]||"#888";
+              const count = tag==="all" ? notes.length : notes.filter(n=>n.tags.includes(tag)).length;
+              if(tag!=="all"&&count===0) return null;
+              return (
+                <button key={tag} onClick={()=>setNoteFilter(tag)}
+                  style={{padding:"3px 10px",background:noteFilter===tag?col+"25":"transparent",
+                    border:`1px solid ${noteFilter===tag?col:C.bord2}`,color:noteFilter===tag?col:C.text3,
+                    cursor:"pointer",fontSize:"10px",borderRadius:"8px",fontWeight:noteFilter===tag?"bold":"normal",letterSpacing:"1px"}}>
+                  {tag.toUpperCase()} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Notes feed */}
+          {notes.length === 0 ? (
+            <div style={{...panel,textAlign:"center",padding:"40px",color:C.text3}}>
+              <div style={{fontSize:"32px",marginBottom:"8px",opacity:0.3}}>📓</div>
+              <div style={{fontSize:"13px"}}>No notes yet — write your first one above</div>
+              <div style={{fontSize:"11px",color:C.dim,marginTop:"6px"}}>Notes are shared with all AI coaches as personal context</div>
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+              {notes
+                .filter(n => noteFilter==="all" || n.tags.includes(noteFilter))
+                .map(note=>{
+                  const TAG_COL = {sleep:"#a78bfa",food:"#34d399",workout:"#fbbf24",mindset:"#f43f5e",goals:"#00ff9d",recovery:"#60a5fa",body:"#00e5ff",general:"#888"};
+                  const primaryTag = note.tags[0]||"general";
+                  const col = TAG_COL[primaryTag]||"#888";
+                  return (
+                    <div key={note.id} style={{...panel,margin:0,borderColor:col+"40",borderLeft:`3px solid ${col}`,padding:"12px 16px"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px",gap:"12px"}}>
+                        <div style={{display:"flex",gap:"6px",flexWrap:"wrap",flex:1}}>
+                          {note.tags.map(tag=>(
+                            <span key={tag} style={{fontSize:"9px",background:TAG_COL[tag]+"22",color:TAG_COL[tag]||"#888",padding:"2px 8px",borderRadius:"4px",letterSpacing:"1px",fontWeight:"bold"}}>
+                              {tag.toUpperCase()}
+                            </span>
+                          ))}
+                          <span style={{fontSize:"10px",color:C.dim,letterSpacing:"0.5px"}}>
+                            {note.date} {note.time}
+                          </span>
+                        </div>
+                        <button onClick={()=>deleteNote(note.id)}
+                          style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:"14px",padding:"0 4px",flexShrink:0}}
+                          title="Delete note">×</button>
+                      </div>
+                      <div style={{fontSize:"13px",lineHeight:"1.7",color:C.text1,whiteSpace:"pre-wrap"}}>
+                        {note.text}
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
+
+          {notes.length > 0 && (
+            <div style={{marginTop:"12px",fontSize:"10px",color:C.dim,textAlign:"center"}}>
+              {notes.length} note{notes.length!==1?"s":""} total · All notes are shared with AI coaches as personal context
+            </div>
+          )}
         </div>
       )}
 
@@ -2291,10 +3129,17 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     <label style={{fontSize:"11px",color:C.text2,letterSpacing:"0.5px",display:"block",marginBottom:"4px",fontWeight:"600"}}>
                       {r.l}{r.u&&<span style={{color:C.text3,marginLeft:"4px",fontWeight:"normal"}}>({r.u})</span>}
                     </label>
-                    <input type="number" placeholder={String(today[r.k]||"")}
-                      value={manualDraft[r.k]||""}
-                      onChange={e=>setManualDraft(p=>({...p,[r.k]:parseFloat(e.target.value)||""}))}
-                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    {r.type==="time" ? (
+                      <input type="time"
+                        value={manualDraft[r.k]||today[r.k]||""}
+                        onChange={e=>setManualDraft(p=>({...p,[r.k]:e.target.value||""}))}
+                        style={{...inp,width:"100%",boxSizing:"border-box",colorScheme:"dark"}}/>
+                    ) : (
+                      <input type="number" placeholder={String(today[r.k]||"")}
+                        value={manualDraft[r.k]||""}
+                        onChange={e=>setManualDraft(p=>({...p,[r.k]:parseFloat(e.target.value)||""}))}
+                        style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    )}
                   </div>
                 ))}
               </div>
