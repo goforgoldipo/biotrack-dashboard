@@ -1354,6 +1354,14 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   useEffect(()=>{localStorage.setItem("bt_chat_threads",JSON.stringify(chatThreads));},[chatThreads]);
   const [chatDraft,setChatDraft]=useState({});    // { [coachId]: string }
   const [chatLoading,setChatLoading]=useState({}); // { [threadKey]: bool }
+  const chatScrollRef = useRef(null); // auto-scroll to bottom on new messages
+
+  // Auto-scroll chat to bottom whenever thread or loading changes
+  useEffect(()=>{
+    if(chatScrollRef.current){
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  },[chatThreads,chatLoading]);
 
   const sendChat = async (coachId, llmId) => {
     const msg=(chatDraft[coachId]||"").trim(); if(!msg) return;
@@ -1363,9 +1371,6 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const now=new Date();
     const dateKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     const threadKey=`thread_${coachId}_${llmId}`;
-    const dailyKey=`daily_${coachId}_${llmId}_${dateKey}`;
-    const dailyResp=analyses[dailyKey]||"";
-    const dailyPromptText=coachPrompts[coachId]||coach.defaultDailyPrompt;
     const existingThread=chatThreads[threadKey]||[];
 
     // Add user message immediately (optimistic)
@@ -1376,25 +1381,20 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     setChatLoading(p=>({...p,[threadKey]:true}));
 
     try {
-      const sys=coach.sys;
+      // Always inject fresh 30-day data into the system prompt — coach has full context on every turn
       const todaySnap=ctx(coachId);
-      // Build full message history:
-      // If daily coaching has been run, seed conversation with it so the coach has context.
-      // If not, seed with data context + user question.
-      const seedMessages = dailyResp ? [
-        {role:"user",    content:`${todaySnap}\n\n${dailyPromptText}`},
-        {role:"assistant",content:dailyResp},
-        ...existingThread.map(m=>({role:m.role,content:m.content})),
-        {role:"user",    content:msg},
-      ] : [
-        {role:"user", content:`${todaySnap}\n\n${msg}`},
-      ];
+      const sysWithData=`${coach.sys}\n\n━━ CLIENT DATA SNAPSHOT (refreshed ${dateKey}) ━━\n${todaySnap}`;
+
+      // Build conversation from existing thread — thread always starts with user role
+      // (analyze() now stores both prompt + response, so thread is always valid)
+      const historyMsgs = existingThread.map(m=>({role:m.role,content:m.content}));
+      const conversationMsgs = [...historyMsgs, {role:"user",content:msg}];
 
       let res;
-      if(llmId==="claude")       res=await callClaudeChat(sys, seedMessages);
-      else if(llmId==="gpt4")    res=await callGPTChat(sys, seedMessages, apiKeys.gpt4);
-      else if(llmId==="grok")    res=await callGrokChat(sys, seedMessages, apiKeys.grok);
-      else if(llmId==="gemini")  res=await callGeminiChat(sys, seedMessages, apiKeys.gemini);
+      if(llmId==="claude")       res=await callClaudeChat(sysWithData, conversationMsgs);
+      else if(llmId==="gpt4")    res=await callGPTChat(sysWithData, conversationMsgs, apiKeys.gpt4);
+      else if(llmId==="grok")    res=await callGrokChat(sysWithData, conversationMsgs, apiKeys.grok);
+      else if(llmId==="gemini")  res=await callGeminiChat(sysWithData, conversationMsgs, apiKeys.gemini);
       else throw new Error(`Unknown LLM: ${llmId}`);
 
       const assistantMsg={role:"assistant",content:res,ts:new Date().toISOString(),type:"qa"};
@@ -1633,11 +1633,14 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
         const persistKey = `thread_${coachId}_${llmId}`;
         const now2 = new Date();
         const dateKey2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,"0")}-${String(now2.getDate()).padStart(2,"0")}`;
+        // Store BOTH the prompt (user) and response (assistant) so the thread always
+        // starts with a valid user message — required by all LLM APIs for multi-turn chat
         setChatThreads(p => ({
           ...p,
-          [persistKey]: [...(p[persistKey]||[]), {
-            role:"assistant", content:res, ts:now2.toISOString(), type:"daily", date:dateKey2
-          }]
+          [persistKey]: [...(p[persistKey]||[]),
+            {role:"user",      content:promptText, ts:now2.toISOString(), type:"daily_prompt", date:dateKey2},
+            {role:"assistant", content:res,        ts:now2.toISOString(), type:"daily",        date:dateKey2},
+          ]
         }));
       }
     } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
@@ -2415,213 +2418,203 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             );
           })()}
 
-          {/* Active Coach Panel */}
-          <div style={{...panel,borderColor:activeCoachObj.col+"40"}}>
-            {/* Header with model picker */}
-            <div style={{marginBottom:"14px",paddingBottom:"10px",borderBottom:`1px solid ${activeCoachObj.col}30`,display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"12px"}}>
-              <div>
-                <div style={{color:activeCoachObj.col,fontSize:"18px",letterSpacing:"2px",fontWeight:"bold",marginBottom:"4px"}}>
-                  {activeCoachObj.icon} {activeCoachObj.name}
-                </div>
-                <div style={{fontSize:"11px",color:C.text3}}>
-                  {liveData?"LIVE DATA":"DEMO DATA"} · Today: {todayDateKey}
-                </div>
-              </div>
-              {/* Model picker */}
-              <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                {LLMS.map(l=>(
-                  <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:l.id}))}
-                    style={{padding:"5px 10px",background:activeLLM===l.id?l.col+"30":"transparent",
-                      border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text3,
-                      cursor:"pointer",fontSize:"10px",borderRadius:"3px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
-                    {l.icon} {l.name}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* ── Active Coach Panel — chat-first design ── */}
+          {(()=>{
+            const threadKey=`thread_${activeCoachObj.id}_${activeLLM}`;
+            const thread=chatThreads[threadKey]||[];
+            const isWaiting=chatLoading[threadKey];
+            const showPromptEditor=loading["_showPrompt_"+activeCoachObj.id];
+            return (
+            <div style={{...panel,borderColor:activeCoachObj.col+"40",display:"flex",flexDirection:"column",gap:0}}>
 
-            {/* Custom Prompt Editor */}
-            <div style={{marginBottom:"14px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
-                <span style={{fontSize:"10px",color:C.text3,letterSpacing:"2px",fontWeight:"600"}}>📝 YOUR DAILY COACHING PROMPT (AUTO-SAVES)</span>
-                <button onClick={()=>setCoachPrompts(p=>{const n={...p};delete n[activeCoachObj.id];return n;})}
-                  style={{...bOut(C.dim),padding:"3px 8px",fontSize:"9px"}}>
-                  ↻ RESET TO DEFAULT
-                </button>
-              </div>
-              <textarea
-                value={currentPrompt}
-                onChange={e=>setCoachPrompts(p=>({...p,[activeCoachObj.id]:e.target.value}))}
-                style={{...inp,width:"100%",minHeight:"100px",boxSizing:"border-box",fontSize:"12px",lineHeight:"1.6",resize:"vertical",fontFamily:"'Courier New',monospace"}}
-                placeholder="Write your custom daily coaching prompt here..."
-              />
-            </div>
-
-            {/* Get Daily Coaching Button */}
-            <button onClick={()=>analyze(activeLLM, activeCoachObj.id, "daily")} disabled={loading[dailyKey]}
-              style={{...bFill(activeCoachObj.col),width:"100%",padding:"14px",fontSize:"13px",marginBottom:"14px",opacity:loading[dailyKey]?0.5:1,cursor:loading[dailyKey]?"wait":"pointer"}}>
-              {loading[dailyKey]?"⟳ COACHING IN PROGRESS...":"▶ GET TODAY'S COACHING"}
-            </button>
-
-            {/* Today's Response */}
-            {analyses[dailyKey] ? (
-              <div style={{marginBottom:"14px"}}>
-                <div style={{fontSize:"10px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"6px"}}>
-                  📅 TODAY'S COACHING ({todayDateKey})
-                </div>
-                <div style={{background:"#080814",border:`1px solid ${activeCoachObj.col}30`,borderRadius:"4px",padding:"14px",fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",color:C.text1,maxHeight:"500px",overflowY:"auto"}}>
-                  {analyses[dailyKey]}
-                </div>
-              </div>
-            ) : (
-              <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"4px",padding:"30px",textAlign:"center",marginBottom:"14px"}}>
-                <div style={{fontSize:"36px",marginBottom:"8px",opacity:0.3}}>{activeCoachObj.icon}</div>
-                <div style={{fontSize:"12px",color:C.text3}}>Tap "GET TODAY'S COACHING" to receive personalized guidance</div>
-                <div style={{fontSize:"10px",color:C.dim,marginTop:"4px"}}>Your prompt and response auto-save for today</div>
-              </div>
-            )}
-
-            {/* ── Q&A Chat Thread ─────────────────────────────────────── */}
-            {(() => {
-              const threadKey=`thread_${activeCoachObj.id}_${activeLLM}`;
-              const thread=chatThreads[threadKey]||[];
-              const isWaiting=chatLoading[threadKey];
-              const chatRef = null; // scroll handled via CSS
-              return (
-                <div style={{borderTop:`1px solid ${activeCoachObj.col}30`,paddingTop:"14px",marginBottom:"14px"}}>
-                  <div style={{fontSize:"10px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"10px"}}>
-                    💬 Q&A — ASK A FOLLOW-UP
+              {/* Header: coach name + data status + LLM picker */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px",marginBottom:"12px",paddingBottom:"10px",borderBottom:`1px solid ${activeCoachObj.col}30`}}>
+                <div>
+                  <div style={{color:activeCoachObj.col,fontSize:"16px",letterSpacing:"2px",fontWeight:"bold",lineHeight:"1.2"}}>
+                    {activeCoachObj.icon} {activeCoachObj.name}
                   </div>
-
-                  {/* Thread messages */}
-                  {thread.length > 0 && (
-                    <div style={{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"14px",maxHeight:"600px",overflowY:"auto"}}>
-                      {thread.map((msg,i)=>{
-                        const isUser = msg.role==="user";
-                        return (
-                          <div key={i} style={{
-                            display:"flex",
-                            flexDirection:"column",
-                            alignItems: isUser?"flex-end":"flex-start",
-                          }}>
-                            <div style={{
-                              maxWidth:"88%",
-                              background: isUser?"#0e0e1e":activeCoachObj.col+"12",
-                              border:`1px solid ${isUser?"#ffffff18":activeCoachObj.col+"40"}`,
-                              borderLeft: isUser?undefined:`3px solid ${activeCoachObj.col}`,
-                              borderRadius:"4px",
-                              padding:"10px 14px",
-                              fontSize:"13px",
-                              lineHeight:"1.75",
-                              whiteSpace:"pre-wrap",
-                              color: isUser?C.text2:C.text1,
-                            }}>
-                              {!isUser && (
-                                <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
-                                  {activeCoachObj.icon} {activeCoachObj.name}
-                                </div>
-                              )}
-                              {msg.content}
-                            </div>
-                            <div style={{fontSize:"9px",color:C.dim,marginTop:"3px",paddingLeft:"4px",paddingRight:"4px"}}>
-                              {isUser?"You":"Coach"} · {msg.ts ? new Date(msg.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : ""}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {isWaiting && (
-                        <div style={{display:"flex",alignItems:"flex-start"}}>
-                          <div style={{background:activeCoachObj.col+"12",border:`1px solid ${activeCoachObj.col}40`,borderLeft:`3px solid ${activeCoachObj.col}`,borderRadius:"4px",padding:"10px 14px"}}>
-                            <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
-                              {activeCoachObj.icon} {activeCoachObj.name}
-                            </div>
-                            <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-                              {[0,1,2].map(j=>(
-                                <div key={j} style={{width:"6px",height:"6px",borderRadius:"50%",background:activeCoachObj.col,
-                                  animation:`pulse 1.2s ease-in-out ${j*0.2}s infinite`,opacity:0.7}}/>
-                              ))}
-                              <span style={{fontSize:"11px",color:C.text3,marginLeft:"6px"}}>thinking...</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Chat input */}
-                  <div style={{display:"flex",gap:"8px",alignItems:"flex-end"}}>
-                    <textarea
-                      value={chatDraft[activeCoachObj.id]||""}
-                      onChange={e=>setChatDraft(p=>({...p,[activeCoachObj.id]:e.target.value}))}
-                      onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat(activeCoachObj.id,activeLLM);}}}
-                      placeholder={analyses[dailyKey]
-                        ? `Ask ${activeCoachObj.name} a follow-up... (Enter to send, Shift+Enter for new line)`
-                        : `Ask ${activeCoachObj.name} anything about your data...`}
-                      disabled={isWaiting}
-                      style={{...inp,flex:1,minHeight:"52px",maxHeight:"160px",resize:"vertical",
-                        fontSize:"13px",lineHeight:"1.6",opacity:isWaiting?0.5:1}}
-                    />
-                    <button onClick={()=>sendChat(activeCoachObj.id,activeLLM)} disabled={isWaiting||!chatDraft[activeCoachObj.id]?.trim()}
-                      style={{...bFill(activeCoachObj.col),padding:"12px 18px",fontSize:"12px",flexShrink:0,
-                        opacity:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?0.4:1,
-                        cursor:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?"default":"pointer",
-                        alignSelf:"flex-end"}}>
-                      {isWaiting?"⟳":"▶ SEND"}
+                  <div style={{fontSize:"10px",color:liveData?"#4ade80":C.dim,marginTop:"3px",display:"flex",alignItems:"center",gap:"8px"}}>
+                    <span>{liveData?"✓ Live data loaded":"Demo data"} · {todayDateKey}</span>
+                    <span style={{color:C.bord2}}>|</span>
+                    <span style={{color:C.text3}}>30-day context always active</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                  {LLMS.map(l=>(
+                    <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:l.id}))}
+                      style={{padding:"4px 9px",background:activeLLM===l.id?l.col+"30":"transparent",
+                        border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text3,
+                        cursor:"pointer",fontSize:"10px",borderRadius:"3px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
+                      {l.icon} {l.name}
                     </button>
-                  </div>
-
-                  {thread.length > 0 && (
-                    <div style={{display:"flex",justifyContent:"flex-end",marginTop:"6px"}}>
-                      <button onClick={()=>setChatThreads(p=>{const n={...p};delete n[threadKey];return n;})}
-                        style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:"9px",letterSpacing:"1px",padding:"2px 0"}}>
-                        ✕ clear thread
-                      </button>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })()}
+              </div>
 
-            {/* Collapsible Preset Questions */}
-            <div style={{borderTop:`1px solid ${C.bord}`,paddingTop:"14px"}}>
-              <button onClick={()=>setShowPresets(!showPresets)}
-                style={{background:"transparent",border:"none",color:C.text3,cursor:"pointer",fontSize:"10px",letterSpacing:"2px",padding:"4px 0",fontFamily:"'Courier New',monospace"}}>
-                {showPresets?"▾":"▸"} PRESET QUESTIONS ({activeCoachObj.questions.length})
-              </button>
-              {showPresets && (
-                <div style={{marginTop:"10px"}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"12px"}}>
-                    {activeCoachObj.questions.map(q=>{
-                      const qKey=`${activeCoachObj.id}_${activeLLM}_${q.id}`;
-                      return (
-                        <button key={q.id} onClick={()=>analyze(activeLLM,activeCoachObj.id,q.id)} disabled={loading[qKey]}
-                          style={{padding:"8px 10px",background:analyses[qKey]?"#0e0e1e":"transparent",
-                            border:`1px solid ${analyses[qKey]?"#4ade8060":activeCoachObj.col+"40"}`,
-                            color:analyses[qKey]?"#4ade80":C.text1,cursor:loading[qKey]?"wait":"pointer",
-                            fontSize:"11px",borderRadius:"3px",fontWeight:"600",fontFamily:"'Courier New',monospace",
-                            textAlign:"left",opacity:loading[qKey]?0.5:1}}>
-                          {loading[qKey]?"⟳ analyzing...":q.label}
-                          {analyses[qKey]&&" ✓"}
-                        </button>
-                      );
-                    })}
+              {/* Chat thread — primary UI */}
+              <div ref={chatScrollRef} style={{
+                display:"flex",flexDirection:"column",gap:"10px",
+                minHeight:"280px",maxHeight:"560px",overflowY:"auto",
+                marginBottom:"12px",paddingRight:"2px",
+              }}>
+                {thread.length===0 && !isWaiting ? (
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,padding:"48px 24px",textAlign:"center",minHeight:"220px"}}>
+                    <div style={{fontSize:"44px",marginBottom:"14px",opacity:0.45}}>{activeCoachObj.icon}</div>
+                    <div style={{fontSize:"14px",color:C.text1,fontWeight:"600",letterSpacing:"1px",marginBottom:"10px"}}>
+                      {activeCoachObj.name}
+                    </div>
+                    <div style={{fontSize:"12px",color:C.text3,lineHeight:"1.8",maxWidth:"380px"}}>
+                      Your last 30 days of health data is loaded and ready.<br/>
+                      Ask me anything — or tap <span style={{color:activeCoachObj.col,fontWeight:"bold"}}>Daily Brief</span> below for a full analysis.
+                    </div>
+                    {liveData && (
+                      <div style={{marginTop:"14px",fontSize:"10px",color:"#4ade80",background:"#4ade8010",border:"1px solid #4ade8030",borderRadius:"4px",padding:"5px 14px",letterSpacing:"0.5px"}}>
+                        ✓ Synced {todayDateKey}
+                      </div>
+                    )}
                   </div>
-                  {activeCoachObj.questions.map(q=>{
-                    const qKey=`${activeCoachObj.id}_${activeLLM}_${q.id}`;
-                    if(!analyses[qKey]) return null;
-                    return (
-                      <div key={q.id} style={{marginBottom:"10px"}}>
-                        <div style={{fontSize:"10px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1px",marginBottom:"4px"}}>{q.label}</div>
-                        <div style={{background:"#080814",border:`1px solid ${C.bord}`,borderRadius:"3px",padding:"10px",fontSize:"11px",lineHeight:"1.7",whiteSpace:"pre-wrap",color:C.text1}}>
-                          {analyses[qKey]}
+                ) : (
+                  thread.map((msg,i)=>{
+                    const isUser=msg.role==="user";
+                    const isDaily=msg.type==="daily";
+                    const isDailyPrompt=msg.type==="daily_prompt";
+                    if(isDailyPrompt) return (
+                      <div key={i} style={{display:"flex",justifyContent:"flex-end"}}>
+                        <div style={{fontSize:"9px",color:activeCoachObj.col,background:activeCoachObj.col+"18",border:`1px solid ${activeCoachObj.col}40`,borderRadius:"8px",padding:"3px 10px",letterSpacing:"1px",fontWeight:"bold"}}>
+                          📅 DAILY BRIEF REQUEST · {msg.date||todayDateKey}
                         </div>
                       </div>
                     );
-                  })}
+                    return (
+                      <div key={i} style={{display:"flex",flexDirection:"column",alignItems:isUser?"flex-end":"flex-start"}}>
+                        {isDaily && (
+                          <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"2px",marginBottom:"5px",alignSelf:"flex-start"}}>
+                            <span style={{background:activeCoachObj.col+"25",border:`1px solid ${activeCoachObj.col}50`,borderRadius:"8px",padding:"2px 8px"}}>
+                              📅 DAILY BRIEF · {msg.date||todayDateKey}
+                            </span>
+                          </div>
+                        )}
+                        <div style={{
+                          maxWidth:"90%",
+                          background:isUser?"#0e0e1e":isDaily?activeCoachObj.col+"18":activeCoachObj.col+"12",
+                          border:`1px solid ${isUser?"#ffffff15":activeCoachObj.col+(isDaily?"50":"35")}`,
+                          borderLeft:isUser?undefined:`3px solid ${activeCoachObj.col}`,
+                          borderRadius:"4px",padding:"10px 14px",
+                          fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",
+                          color:isUser?C.text2:C.text1,
+                        }}>
+                          {!isUser && (
+                            <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
+                              {activeCoachObj.icon} {activeCoachObj.name}
+                            </div>
+                          )}
+                          {msg.content}
+                        </div>
+                        <div style={{fontSize:"9px",color:C.dim,marginTop:"3px",paddingLeft:"3px",paddingRight:"3px"}}>
+                          {isUser?"You":"Coach"} · {msg.ts?new Date(msg.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}):""}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                {isWaiting && (
+                  <div style={{display:"flex",alignItems:"flex-start"}}>
+                    <div style={{background:activeCoachObj.col+"12",border:`1px solid ${activeCoachObj.col}40`,borderLeft:`3px solid ${activeCoachObj.col}`,borderRadius:"4px",padding:"10px 14px"}}>
+                      <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>{activeCoachObj.icon} {activeCoachObj.name}</div>
+                      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                        {[0,1,2].map(j=>(
+                          <div key={j} style={{width:"6px",height:"6px",borderRadius:"50%",background:activeCoachObj.col,
+                            animation:`pulse 1.2s ease-in-out ${j*0.2}s infinite`,opacity:0.7}}/>
+                        ))}
+                        <span style={{fontSize:"11px",color:C.text3,marginLeft:"6px"}}>thinking...</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick action chips: Daily Brief + preset questions */}
+              <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginBottom:"10px",paddingBottom:"10px",borderBottom:`1px solid ${C.bord}`}}>
+                <button onClick={()=>analyze(activeLLM,activeCoachObj.id,"daily")} disabled={loading[dailyKey]}
+                  style={{padding:"7px 14px",background:analyses[dailyKey]?"#4ade8015":"transparent",
+                    border:`1px solid ${analyses[dailyKey]?"#4ade8055":activeCoachObj.col}`,
+                    color:analyses[dailyKey]?"#4ade80":activeCoachObj.col,
+                    cursor:loading[dailyKey]?"wait":"pointer",fontSize:"11px",borderRadius:"4px",
+                    fontWeight:"bold",opacity:loading[dailyKey]?0.5:1,fontFamily:"'Courier New',monospace"}}>
+                  {loading[dailyKey]?"⟳ analyzing...":analyses[dailyKey]?"✓ Daily Brief":"▶ Daily Brief"}
+                </button>
+                {activeCoachObj.questions.map(q=>{
+                  const qKey=`${activeCoachObj.id}_${activeLLM}_${q.id}`;
+                  return (
+                    <button key={q.id} onClick={()=>analyze(activeLLM,activeCoachObj.id,q.id)} disabled={loading[qKey]}
+                      style={{padding:"7px 12px",background:analyses[qKey]?"#4ade8015":"transparent",
+                        border:`1px solid ${analyses[qKey]?"#4ade8055":C.bord2}`,
+                        color:analyses[qKey]?"#4ade80":C.text2,
+                        cursor:loading[qKey]?"wait":"pointer",fontSize:"10px",borderRadius:"4px",
+                        opacity:loading[qKey]?0.5:1,fontFamily:"'Courier New',monospace"}}>
+                      {loading[qKey]?"⟳ ...":`${q.label}${analyses[qKey]?" ✓":""}`}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Chat input — always visible */}
+              <div style={{display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"8px"}}>
+                <textarea
+                  value={chatDraft[activeCoachObj.id]||""}
+                  onChange={e=>setChatDraft(p=>({...p,[activeCoachObj.id]:e.target.value}))}
+                  onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat(activeCoachObj.id,activeLLM);}}}
+                  placeholder={`Ask ${activeCoachObj.name} anything… (Enter to send, Shift+Enter for new line)`}
+                  disabled={isWaiting}
+                  style={{...inp,flex:1,minHeight:"54px",maxHeight:"180px",resize:"vertical",
+                    fontSize:"13px",lineHeight:"1.6",opacity:isWaiting?0.5:1}}
+                />
+                <button onClick={()=>sendChat(activeCoachObj.id,activeLLM)}
+                  disabled={isWaiting||!chatDraft[activeCoachObj.id]?.trim()}
+                  style={{...bFill(activeCoachObj.col),padding:"12px 20px",fontSize:"12px",flexShrink:0,
+                    opacity:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?0.4:1,
+                    cursor:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?"default":"pointer",
+                    alignSelf:"flex-end",letterSpacing:"1px"}}>
+                  {isWaiting?"⟳":"▶ SEND"}
+                </button>
+              </div>
+
+              {thread.length>0 && (
+                <div style={{display:"flex",justifyContent:"flex-end",marginBottom:"4px"}}>
+                  <button onClick={()=>setChatThreads(p=>{const n={...p};delete n[threadKey];return n;})}
+                    style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:"9px",letterSpacing:"1px",padding:"2px 0"}}>
+                    ✕ clear conversation
+                  </button>
                 </div>
               )}
+
+              {/* Collapsible: customize daily brief prompt */}
+              <div style={{borderTop:`1px solid ${C.bord}`,paddingTop:"10px",marginTop:"4px"}}>
+                <button onClick={()=>setLoading(p=>({...p,["_showPrompt_"+activeCoachObj.id]:!showPromptEditor}))}
+                  style={{background:"transparent",border:"none",color:C.text3,cursor:"pointer",fontSize:"10px",letterSpacing:"2px",padding:"4px 0",fontFamily:"'Courier New',monospace",display:"flex",alignItems:"center",gap:"6px"}}>
+                  <span>{showPromptEditor?"▾":"▸"}</span>
+                  <span>CUSTOMIZE DAILY BRIEF PROMPT</span>
+                </button>
+                {showPromptEditor && (
+                  <div style={{marginTop:"10px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+                      <span style={{fontSize:"10px",color:C.text3,letterSpacing:"1px"}}>📝 Edits auto-save to localStorage</span>
+                      <button onClick={()=>setCoachPrompts(p=>{const n={...p};delete n[activeCoachObj.id];return n;})}
+                        style={{...bOut(C.dim),padding:"3px 10px",fontSize:"9px"}}>↻ Reset to default</button>
+                    </div>
+                    <textarea
+                      value={currentPrompt}
+                      onChange={e=>setCoachPrompts(p=>({...p,[activeCoachObj.id]:e.target.value}))}
+                      style={{...inp,width:"100%",minHeight:"120px",boxSizing:"border-box",fontSize:"12px",lineHeight:"1.6",resize:"vertical",fontFamily:"'Courier New',monospace"}}
+                      placeholder="Write your custom daily coaching prompt here..."
+                    />
+                  </div>
+                )}
+              </div>
+
             </div>
-          </div>
+            );
+          })()}
 
           <div style={{...panel,marginTop:"16px"}}>
             {sectionLabel("LIVE DATA CONTEXT SENT TO AI:")}
