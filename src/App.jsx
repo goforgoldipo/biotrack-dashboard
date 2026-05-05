@@ -325,10 +325,9 @@ const getCols = (view, live, history) => {
   const dayLabel = (i, d) => {
     if(i===0) return live?"TODAY ◉ LIVE":"TODAY";
     if(!d.dow||!d.date) return `${i}D AGO`;
-    // Check if date is from a prior year
-    const parsed = new Date(d.date+", "+thisYear);
-    if(parsed > new Date(Date.now()+86400000)) parsed.setFullYear(thisYear-1);
-    const yr = parsed.getFullYear();
+    // Use robust parser to get year — handles "Apr 12 2026", "Apr 12, 2026", "Apr 12" etc.
+    const parsed = parseSyncDateRobust(d.date) || parseSyncDateRobust(d.syncDate);
+    const yr = parsed ? parsed.getFullYear() : thisYear;
     return yr < thisYear ? `${d.dow} ${d.date} ${yr}` : `${d.dow} ${d.date}`;
   };
   const weekLabel = (w) => {
@@ -342,18 +341,7 @@ const getCols = (view, live, history) => {
     const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    const parseDate = (s) => {
-      if(!s) return null;
-      const hasYear = /\b\d{4}\b/.test(s);
-      let p;
-      if(hasYear) {
-        p = new Date(s);
-      } else {
-        p = new Date(s+", "+thisYear);
-        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) p.setFullYear(thisYear-1);
-      }
-      return isNaN(p.getTime()) ? null : p;
-    };
+    const parseDate = (s) => parseSyncDateRobust(s);
     const byDateKey = {};
     all.forEach(d => {
       if(!d||!d.syncDate) return;
@@ -613,27 +601,36 @@ function HumeBodyMap({ data, onUpdate }) {
 }
 
 
+// ── Robust cross-browser syncDate parser ──────────────────────────────────
+// Safari/WebKit rejects "Apr 12 2026" (no comma) — must normalize to "Apr 12, 2026"
+// Handles: "Apr 12 2026", "Apr 12, 2026", "Apr 12", "2026-04-12"
+const parseSyncDateRobust = (s) => {
+  if (!s) return null;
+  // ISO format: parse as local time to avoid UTC-offset off-by-one
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // "Mon Day Year" or "Mon Day, Year" — add comma before year if missing (Safari fix)
+  const normed = s.replace(/^([A-Za-z]+\s+\d{1,2})\s+(\d{4})/, "$1, $2");
+  const hasYear = /\b\d{4}\b/.test(normed);
+  const withYear = hasYear ? normed : normed + ", " + new Date().getFullYear();
+  const p2 = new Date(withYear);
+  if (isNaN(p2.getTime())) return null;
+  // If no year was in the original string and parsed date is in the future, roll back
+  if (!hasYear && p2 > new Date(Date.now() + 86400000)) p2.setFullYear(p2.getFullYear() - 1);
+  return p2;
+};
+
 const mapImport = (p) => {
   // Derive dow/date — prefer syncDate (actual data date) over _receivedAt (import time)
-  // syncDate can be "Apr 12 2025" (with year) or "Apr 12" (without year)
+  // syncDate can be "Apr 12 2026" (with year, no comma) or "Apr 12" (no year)
   let refDate;
   if (p.syncDate) {
-    // Does syncDate contain a 4-digit year?
-    const hasYear = /\b\d{4}\b/.test(p.syncDate);
-    let parsed;
-    if (hasYear) {
-      parsed = new Date(p.syncDate);
-    } else {
-      parsed = new Date(p.syncDate + ", " + new Date().getFullYear());
-      if (!isNaN(parsed.getTime()) && parsed > new Date(Date.now() + 86400000)) {
-        parsed.setFullYear(parsed.getFullYear() - 1);
-      }
-    }
-    refDate = parsed;
-  } else if (p._receivedAt) {
-    refDate = new Date(p._receivedAt);
-  } else {
-    refDate = new Date();
+    refDate = parseSyncDateRobust(p.syncDate);
+  }
+  if (!refDate || isNaN(refDate.getTime())) {
+    refDate = p._receivedAt ? new Date(p._receivedAt) : new Date();
   }
   const m = {
     syncDate: p.syncDate||new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}),
@@ -876,21 +873,9 @@ export default function App() {
     const now = new Date();
     const nowKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
     const parseSyncDate = (s) => {
-      if(!s) return null;
-      // Does the string explicitly contain a 4-digit year? e.g. "Apr 16 2026"
-      const hasYear = /\b\d{4}\b/.test(s);
-      let p;
-      if(hasYear) {
-        p = new Date(s);
-      } else {
-        // No year in string — assume current year, roll back if that's in the future
-        p = new Date(s+", "+now.getFullYear());
-        if(!isNaN(p.getTime()) && p > new Date(Date.now()+86400000)) {
-          p.setFullYear(p.getFullYear()-1);
-        }
-      }
-      if(isNaN(p.getTime())) return null;
-      return `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`;
+      const d = parseSyncDateRobust(s);
+      if (!d) return null;
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     };
     // Check if liveData is from today
     if(liveData && parseSyncDate(liveData.syncDate) === nowKey) return { ...liveData };
