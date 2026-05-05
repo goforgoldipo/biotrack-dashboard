@@ -1224,14 +1224,8 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       const raw = match.syncDate || match.date || null;
       let dateKey = null;
       if (raw) {
-        const hasYear = /\b\d{4}\b/.test(raw);
-        const now = new Date();
-        const p = hasYear ? new Date(raw) : (() => {
-          const d = new Date(raw + ", " + now.getFullYear());
-          if (!isNaN(d.getTime()) && d > new Date(Date.now() + 86400000)) d.setFullYear(d.getFullYear()-1);
-          return d;
-        })();
-        if (!isNaN(p.getTime())) dateKey = p.toISOString().slice(0,10);
+        const p = parseSyncDateRobust(raw);
+        if (p) dateKey = `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,"0")}-${String(p.getDate()).padStart(2,"0")}`;
       }
       const daysAgo = dateKey ? Math.floor((Date.now() - new Date(dateKey).getTime()) / 86400000) : null;
       result[src] = { lastDate: dateKey, daysAgo, source: "history" };
