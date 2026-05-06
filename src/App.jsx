@@ -342,43 +342,51 @@ const getCols = (view, live, history) => {
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
     const parseDate = (s) => parseSyncDateRobust(s);
+    // Compute the live data's actual date key (may be older than today)
+    const liveDateKey = live?.syncDate ? (() => {
+      const lp = parseDate(live.syncDate);
+      return lp ? localKey(lp) : null;
+    })() : null;
+    const todayKey = localKey(new Date());
+    const liveIsFromToday = liveDateKey === todayKey;
+
+    // Build byDateKey from all history entries.
+    // When live is stale (not from today), exclude its date from the grid — it will
+    // appear in column 0 (TODAY) instead, so it doesn't show up twice.
     const byDateKey = {};
     all.forEach(d => {
       if(!d||!d.syncDate) return;
       const parsed = parseDate(d.syncDate);
-      if(parsed) byDateKey[localKey(parsed)] = d;
+      if(!parsed) return;
+      const k = localKey(parsed);
+      // If live is stale, don't put its date in the grid (column 0 owns it)
+      if(!liveIsFromToday && k === liveDateKey) return;
+      byDateKey[k] = d;
     });
-    // Also index live data's date if present
-    if(live && live.syncDate) {
-      const liveParsed = parseDate(live.syncDate);
-      if(liveParsed) {
-        const k = localKey(liveParsed);
-        byDateKey[k] = { ...byDateKey[k], ...live, isDemo:false };
-      }
+    // If live is from today, merge it into today's slot
+    if(live && liveIsFromToday) {
+      byDateKey[todayKey] = { ...(byDateKey[todayKey]||{}), ...live, isDemo:false };
     }
+
     // Generate 30 consecutive calendar days starting from today
     const todayJs = new Date();
     return Array.from({length:30},(_,i)=>{
       const date = new Date(todayJs.getFullYear(), todayJs.getMonth(), todayJs.getDate() - i);
       const key = localKey(date);
-      // For i===0 (TODAY), only inject live data if live's syncDate is actually today
+      // Column 0: always show most recent data available (live), even if stale
       let d = byDateKey[key] || EMPTY_DAY;
-      const liveIsToday = live && (() => {
-        const lp = parseDate(live.syncDate);
-        return lp ? localKey(lp) === key : false;
-      })();
-      if(liveIsToday) d = { ...d, ...live, isDemo:false };
+      if(i===0 && live) d = { ...d, ...live, isDemo:false };
       const dow = DOW[date.getDay()];
       const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
       const yr = date.getFullYear();
       let label;
       if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
       else label = `${dow} ${dateStr}`;
-      if(i===0 && liveIsToday) label = `${label} ●`;
+      if(i===0 && live) label = `${label} ●`;
       return {
         label,
         data: d,
-        live: !!liveIsToday,
+        live: i===0 && !!live,
         dayIndex:i,
         allDays:all,
       };
