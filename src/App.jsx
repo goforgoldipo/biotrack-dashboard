@@ -361,20 +361,24 @@ const getCols = (view, live, history) => {
     return Array.from({length:30},(_,i)=>{
       const date = new Date(todayJs.getFullYear(), todayJs.getMonth(), todayJs.getDate() - i);
       const key = localKey(date);
-      // For i===0 (TODAY), always include live data if it exists
+      // For i===0 (TODAY), only inject live data if live's syncDate is actually today
       let d = byDateKey[key] || EMPTY_DAY;
-      if(i===0 && live) d = { ...d, ...live, isDemo:false };
+      const liveIsToday = live && (() => {
+        const lp = parseDate(live.syncDate);
+        return lp ? localKey(lp) === key : false;
+      })();
+      if(liveIsToday) d = { ...d, ...live, isDemo:false };
       const dow = DOW[date.getDay()];
       const dateStr = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
       const yr = date.getFullYear();
       let label;
       if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
       else label = `${dow} ${dateStr}`;
-      if(i===0 && live) label = `${label} ●`;
+      if(i===0 && liveIsToday) label = `${label} ●`;
       return {
         label,
         data: d,
-        live: i===0&&!!live,
+        live: !!liveIsToday,
         dayIndex:i,
         allDays:all,
       };
