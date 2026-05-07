@@ -2054,52 +2054,65 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <tbody>
                 {sortedGroups.map((g,gi)=>(
                   <Fragment key={g.id}>
-                    <tr><td colSpan={cols.length+2} style={{padding:0}}>
-                      <div style={{padding:"8px 16px",background:"#0c0c1a",display:"flex",alignItems:"center",gap:"8px",borderTop:`1px solid ${C.bord}`,borderBottom:`1px solid ${C.bord}`}}>
-                        <div style={{display:"flex",flexDirection:"column",gap:"1px",marginRight:"4px"}}>
-                          <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,-1)}} style={{background:"none",border:"none",color:gi===0?C.dim:C.text3,cursor:gi===0?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▲</button>
-                          <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,1)}} style={{background:"none",border:"none",color:gi===sortedGroups.length-1?C.dim:C.text3,cursor:gi===sortedGroups.length-1?"default":"pointer",fontSize:"8px",padding:"2px 4px",lineHeight:"1"}}>▼</button>
-                        </div>
-                        <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))} style={{display:"flex",alignItems:"center",gap:"12px",cursor:"pointer",flex:1,flexWrap:"wrap"}}>
-                          <span style={{color:g.col,fontSize:"11px"}}>{expanded[g.id]?"▾":"▸"}</span>
-                          <span style={{color:g.col,fontSize:"11px",letterSpacing:"3px",fontWeight:"bold"}}>{g.name}</span>
-                          <span style={{fontSize:"9px",background:g.col+"22",color:g.col,padding:"2px 10px",borderRadius:"3px",letterSpacing:"1.5px",fontWeight:"600"}}>{g.src}</span>
-                          {(() => {
-                            const meta = sourceMeta[g.src];
-                            const staleThresh = SOURCE_STALE[g.src] ?? 7;
-                            const neverMsg = {
-                              "FITBOD":       "⚠ never imported — run import-fitbod.js",
-                              "MANUAL":       "no measurements entered yet",
-                              "HUME":         "no body scan data yet",
-                              "OURA":         "no Oura data yet",
-                              "MYFITNESSPAL": "no MFP data yet",
-                              "APPLE HEALTH": "no Apple Health data yet",
-                            };
-                            if (!meta) {
-                              // Only show "never" warning for FITBOD and MANUAL — others are auto-synced
-                              if (g.src === "FITBOD" || g.src === "MANUAL") {
-                                return <span style={{fontSize:"9px",color:"#f87171",letterSpacing:"1px"}}>{neverMsg[g.src]||"no data yet"}</span>;
+                    <tr style={{background:"#0c0c1a",borderTop:`1px solid ${C.bord}`,borderBottom:`1px solid ${C.bord}`}}>
+                      {/* Group label cell */}
+                      <td style={{padding:"6px 8px",position:"sticky",left:0,background:"#0c0c1a",zIndex:1,whiteSpace:"nowrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                          <div style={{display:"flex",flexDirection:"column",gap:"1px"}}>
+                            <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,-1)}} style={{background:"none",border:"none",color:gi===0?C.dim:C.text3,cursor:gi===0?"default":"pointer",fontSize:"8px",padding:"1px 3px",lineHeight:"1"}}>▲</button>
+                            <button onClick={(e)=>{e.stopPropagation();moveGroup(g.id,1)}} style={{background:"none",border:"none",color:gi===sortedGroups.length-1?C.dim:C.text3,cursor:gi===sortedGroups.length-1?"default":"pointer",fontSize:"8px",padding:"1px 3px",lineHeight:"1"}}>▼</button>
+                          </div>
+                          <div onClick={()=>setExpanded(p=>({...p,[g.id]:!p[g.id]}))} style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer",flexWrap:"wrap"}}>
+                            <span style={{color:g.col,fontSize:"11px"}}>{expanded[g.id]?"▾":"▸"}</span>
+                            <span style={{color:g.col,fontSize:"10px",letterSpacing:"2px",fontWeight:"bold"}}>{g.name}</span>
+                            <span style={{fontSize:"8px",background:g.col+"22",color:g.col,padding:"2px 8px",borderRadius:"3px",letterSpacing:"1px",fontWeight:"600"}}>{g.src}</span>
+                            {(() => {
+                              const meta = sourceMeta[g.src];
+                              const staleThresh = SOURCE_STALE[g.src] ?? 7;
+                              const neverMsg = {
+                                "FITBOD":       "⚠ never imported — run import-fitbod.js",
+                                "MANUAL":       "no measurements entered yet",
+                                "HUME":         "no body scan data yet",
+                                "OURA":         "no Oura data yet",
+                                "MYFITNESSPAL": "no MFP data yet",
+                                "APPLE HEALTH": "no Apple Health data yet",
+                              };
+                              if (!meta) {
+                                if (g.src === "FITBOD" || g.src === "MANUAL") {
+                                  return <span style={{fontSize:"9px",color:"#f87171",letterSpacing:"1px"}}>{neverMsg[g.src]||"no data yet"}</span>;
+                                }
+                                return null;
                               }
-                              return null;
-                            }
-                            const { daysAgo, lastDate, source, extra } = meta;
-                            const stale = daysAgo !== null && daysAgo > staleThresh;
-                            const age = daysAgo === null ? "unknown"
-                              : daysAgo === 0 ? "today"
-                              : daysAgo === 1 ? "yesterday"
-                              : `${daysAgo}d ago`;
-                            const verb = source === "import" ? "imported" : "synced";
-                            const through = lastDate ? ` · through ${lastDate}` : "";
-                            const extraNote = extra && source === "import" ? "" : ""; // date range shown via `through`
-                            return (
-                              <span style={{fontSize:"9px",color:stale?"#f87171":"#4ade80",letterSpacing:"1px",display:"flex",alignItems:"center",gap:"4px"}}>
-                                {stale ? "⚠" : "✓"} {verb} {age}{through}
-                              </span>
-                            );
-                          })()}
+                              const { daysAgo, lastDate, source } = meta;
+                              const stale = daysAgo !== null && daysAgo > staleThresh;
+                              const age = daysAgo === null ? "unknown"
+                                : daysAgo === 0 ? "today"
+                                : daysAgo === 1 ? "yesterday"
+                                : `${daysAgo}d ago`;
+                              const verb = source === "import" ? "imported" : "synced";
+                              const through = lastDate ? ` · through ${lastDate}` : "";
+                              return (
+                                <span style={{fontSize:"9px",color:stale?"#f87171":"#4ade80",letterSpacing:"1px",display:"flex",alignItems:"center",gap:"4px"}}>
+                                  {stale ? "⚠" : "✓"} {verb} {age}{through}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </div>
-                      </div>
-                    </td></tr>
+                      </td>
+                      {/* Date label cells — one per column */}
+                      {cols.map(c=>(
+                        <td key={c.label} style={{padding:"6px 4px",textAlign:"center",width:"80px",minWidth:"70px",maxWidth:"90px"}}>
+                          <span style={{fontSize:"9px",color:c.live?"#00ff9d":c.label==="TODAY"?C.text2:C.dim,fontWeight:c.live||c.label==="TODAY"?"600":"normal",letterSpacing:"0.5px"}}>
+                            {c.label}
+                          </span>
+                        </td>
+                      ))}
+                      {/* Trend column placeholder */}
+                      <td style={{padding:"6px 4px",textAlign:"center"}}>
+                        <span style={{fontSize:"9px",color:C.dim}}>TREND</span>
+                      </td>
+                    </tr>
                     {expanded[g.id] && g.rows.map(row=>{
                       const vals=cols.map(c=>c.data[row.k]);
                       const nums=vals.filter(v=>typeof v==="number");
