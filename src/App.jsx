@@ -2287,140 +2287,71 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
           )}
 
-          {/* Coach Tab Bar */}
-          <div style={{display:"flex",gap:"0",marginBottom:"16px",borderBottom:`1px solid ${C.bord}`,overflowX:"auto"}}>
-            {COACHES.map(coach => {
-              const isActive = activeCoach === coach.id;
-              const hasDaily = analyses[`daily_${coach.id}_${coachLLMs[coach.id]||"claude"}_${todayDateKey}`];
-              return (
-                <button key={coach.id} onClick={()=>setActiveCoach(coach.id)}
-                  style={{
-                    padding:"12px 20px",
-                    background:isActive?coach.col+"20":"transparent",
-                    border:"none",
-                    borderBottom:`3px solid ${isActive?coach.col:"transparent"}`,
-                    color:isActive?coach.col:C.text2,
-                    cursor:"pointer",
-                    fontSize:"12px",
-                    fontWeight:isActive?"bold":"normal",
-                    letterSpacing:"1px",
-                    fontFamily:"'Courier New',monospace",
-                    whiteSpace:"nowrap",
-                    display:"flex",
-                    alignItems:"center",
-                    gap:"6px"
-                  }}>
-                  <span style={{fontSize:"16px"}}>{coach.icon}</span>
-                  {coach.name}
-                  {hasDaily && <span style={{color:"#4ade80",fontSize:"10px"}}>●</span>}
+          {/* Coach Selector + LLM Picker — unified top bar */}
+          <div style={{display:"flex",gap:"10px",alignItems:"center",marginBottom:"16px",flexWrap:"wrap"}}>
+            {/* Coach dropdown */}
+            <div style={{position:"relative",flex:"1",minWidth:"200px",maxWidth:"320px"}}>
+              <select
+                value={activeCoach}
+                onChange={e=>setActiveCoach(e.target.value)}
+                style={{
+                  width:"100%",
+                  background:"#0e0e18",
+                  border:`2px solid ${activeCoachObj.col}60`,
+                  borderRadius:"6px",
+                  color:activeCoachObj.col,
+                  fontSize:"14px",
+                  fontWeight:"bold",
+                  fontFamily:"'Courier New',monospace",
+                  padding:"10px 14px",
+                  cursor:"pointer",
+                  appearance:"none",
+                  letterSpacing:"1px",
+                  outline:"none",
+                }}>
+                {COACHES.map(c=>(
+                  <option key={c.id} value={c.id} style={{background:"#0e0e18",color:c.col}}>
+                    {c.icon}  {c.name}
+                    {analyses[`daily_${c.id}_${coachLLMs[c.id]||"claude"}_${todayDateKey}`] ? "  ✓" : ""}
+                  </option>
+                ))}
+              </select>
+              <span style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:activeCoachObj.col,pointerEvents:"none",fontSize:"12px"}}>▾</span>
+            </div>
+
+            {/* LLM picker */}
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+              {LLMS.map(l=>(
+                <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:l.id}))}
+                  style={{padding:"8px 12px",background:activeLLM===l.id?l.col+"30":"transparent",
+                    border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text3,
+                    cursor:"pointer",fontSize:"11px",borderRadius:"4px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
+                  {l.icon} {l.name}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Run all + notifications compact */}
+            <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"center",flexWrap:"wrap"}}>
+              {notifPermission !== "granted" && (
+                <button onClick={requestNotifPermission}
+                  style={{...bOut("#60a5fa"),padding:"7px 12px",fontSize:"10px"}}>
+                  🔔 Enable Notifs
+                </button>
+              )}
+              {notifPermission === "granted" && (
+                <span style={{fontSize:"10px",color:"#4ade80"}}>🔔 ON</span>
+              )}
+              <button onClick={async()=>{
+                for(const coach of COACHES){
+                  const llm=coachLLMs[coach.id]||"claude";
+                  await analyze(llm,coach.id,"daily");
+                }
+              }} style={{...bFill("#00ff9d"),padding:"7px 14px",fontSize:"10px"}}>
+                ☰ RUN ALL
+              </button>
+            </div>
           </div>
-
-          {/* Weekly Schedule — each coach has an assigned day */}
-          {(() => {
-            // Workout=Sat, Food=Sun, Sleep=Mon, Progress=Tue, Celebrate=Wed
-            const SCHEDULE = { workout:"Saturday", food:"Sunday", sleep:"Monday", progress:"Tuesday", celebrate:"Wednesday" };
-            const DOW_IDX  = { Sunday:0, Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6 };
-            const today = new Date();
-            return (
-              <div style={{display:"flex",gap:"8px",marginBottom:"16px",flexWrap:"wrap"}}>
-                {COACHES.map(coach => {
-                  const day = SCHEDULE[coach.id] || "—";
-                  const dayIdx = DOW_IDX[day] ?? -1;
-                  const todayIdx = today.getDay();
-                  const daysUntil = dayIdx < 0 ? null : (dayIdx - todayIdx + 7) % 7;
-                  const isToday = daysUntil === 0;
-                  const hasThisWeek = Object.keys(analyses).some(k =>
-                    k.startsWith(`daily_${coach.id}_`) && (() => {
-                      // Check if the key is from the current week
-                      const parts = k.split("_"); const dateStr = parts[parts.length-1];
-                      if(!dateStr||!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return false;
-                      const d = new Date(dateStr);
-                      const diffDays = Math.abs((today - d) / 86400000);
-                      return diffDays <= 7;
-                    })()
-                  );
-                  return (
-                    <div key={coach.id} onClick={()=>setActiveCoach(coach.id)}
-                      style={{flex:"1",minWidth:"140px",background:isToday?coach.col+"18":C.surf,
-                        border:`1px solid ${isToday?coach.col:hasThisWeek?"#4ade8040":C.bord}`,
-                        borderRadius:"6px",padding:"10px 14px",cursor:"pointer",position:"relative"}}>
-                      <div style={{fontSize:"10px",color:coach.col,letterSpacing:"1px",fontWeight:"bold",marginBottom:"2px"}}>
-                        {coach.icon} {coach.name.split(" ")[0]}
-                      </div>
-                      <div style={{fontSize:"12px",color:isToday?C.text1:C.text2,fontWeight:isToday?"bold":"normal"}}>{day}</div>
-                      <div style={{fontSize:"10px",color:isToday?"#00ff9d":C.dim,marginTop:"2px"}}>
-                        {isToday?"● TODAY":`in ${daysUntil} day${daysUntil===1?"":"s"}`}
-                      </div>
-                      {hasThisWeek && <div style={{position:"absolute",top:"8px",right:"10px",fontSize:"10px",color:"#4ade80"}}>✓</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {/* Notification Schedule Panel */}
-          {(() => {
-            const DOW = new Date().getDay();
-            const isWeekend = DOW === 0 || DOW === 6;
-            const nextNotifHour = isWeekend ? 8 : 5;
-            const now = new Date();
-            const nextFire = new Date(now);
-            nextFire.setHours(nextNotifHour, 0, 0, 0);
-            if (nextFire <= now) nextFire.setDate(nextFire.getDate() + 1);
-            const diffMs = nextFire - now;
-            const diffH = Math.floor(diffMs / 3600000);
-            const diffM = Math.floor((diffMs % 3600000) / 60000);
-            const countdownStr = diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
-            return (
-              <div style={{...panel,marginBottom:"16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px",padding:"12px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"20px",flexWrap:"wrap"}}>
-                  <div>
-                    <div style={{fontSize:"9px",color:C.text3,letterSpacing:"2px",marginBottom:"3px"}}>🔔 COACHING NOTIFICATIONS</div>
-                    <div style={{display:"flex",gap:"16px",flexWrap:"wrap"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                        <span style={{fontSize:"9px",color:C.dim}}>MON–FRI</span>
-                        <span style={{fontSize:"14px",fontWeight:"bold",color:"#60a5fa",fontFamily:"'Courier New',monospace"}}>5:00 AM</span>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                        <span style={{fontSize:"9px",color:C.dim}}>SAT–SUN</span>
-                        <span style={{fontSize:"14px",fontWeight:"bold",color:"#fbbf24",fontFamily:"'Courier New',monospace"}}>8:00 AM</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:"9px",color:C.text3,letterSpacing:"2px",marginBottom:"3px"}}>NEXT NOTIFICATION</div>
-                    <div style={{fontSize:"12px",color:"#4ade80",fontFamily:"'Courier New',monospace"}}>
-                      {notifPermission === "granted"
-                        ? `⏱ in ${countdownStr}`
-                        : notifPermission === "denied"
-                        ? "🚫 blocked in browser"
-                        : "— not enabled"}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  {notifPermission === "granted" ? (
-                    <div style={{fontSize:"11px",color:"#4ade80",display:"flex",alignItems:"center",gap:"6px"}}>
-                      <span>✓</span><span>Notifications ON</span>
-                    </div>
-                  ) : notifPermission === "denied" ? (
-                    <div style={{fontSize:"10px",color:"#f87171",maxWidth:"200px",textAlign:"right"}}>
-                      Blocked — enable in browser site settings
-                    </div>
-                  ) : (
-                    <button onClick={requestNotifPermission}
-                      style={{...bFill("#60a5fa"),padding:"8px 16px",fontSize:"11px"}}>
-                      🔔 ENABLE NOTIFICATIONS
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
 
           {/* ── Active Coach Panel — chat-first design ── */}
           {(()=>{
@@ -2431,27 +2362,15 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             return (
             <div style={{...panel,borderColor:activeCoachObj.col+"40",display:"flex",flexDirection:"column",gap:0}}>
 
-              {/* Header: coach name + data status + LLM picker */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"8px",marginBottom:"12px",paddingBottom:"10px",borderBottom:`1px solid ${activeCoachObj.col}30`}}>
-                <div>
-                  <div style={{color:activeCoachObj.col,fontSize:"16px",letterSpacing:"2px",fontWeight:"bold",lineHeight:"1.2"}}>
-                    {activeCoachObj.icon} {activeCoachObj.name}
-                  </div>
-                  <div style={{fontSize:"10px",color:liveData?"#4ade80":C.dim,marginTop:"3px",display:"flex",alignItems:"center",gap:"8px"}}>
-                    <span>{liveData?"✓ Live data loaded":"Demo data"} · {todayDateKey}</span>
-                    <span style={{color:C.bord2}}>|</span>
-                    <span style={{color:C.text3}}>30-day context always active</span>
-                  </div>
+              {/* Header: data status */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"8px",borderBottom:`1px solid ${activeCoachObj.col}25`}}>
+                <div style={{fontSize:"10px",color:liveData?"#4ade80":C.dim,display:"flex",alignItems:"center",gap:"8px"}}>
+                  <span>{liveData?"✓ Live data loaded":"Demo data"} · {todayDateKey}</span>
+                  <span style={{color:C.bord2}}>|</span>
+                  <span style={{color:C.text3}}>30-day context active</span>
                 </div>
-                <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-                  {LLMS.map(l=>(
-                    <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:l.id}))}
-                      style={{padding:"4px 9px",background:activeLLM===l.id?l.col+"30":"transparent",
-                        border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text3,
-                        cursor:"pointer",fontSize:"10px",borderRadius:"3px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
-                      {l.icon} {l.name}
-                    </button>
-                  ))}
+                <div style={{fontSize:"10px",color:C.dim,fontFamily:"'Courier New',monospace"}}>
+                  {thread.length > 0 ? `${thread.filter(m=>m.role==="assistant").length} response${thread.filter(m=>m.role==="assistant").length!==1?"s":""}` : ""}
                 </div>
               </div>
 
