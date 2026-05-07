@@ -134,11 +134,11 @@ const GROUPS = [
     {k:"vo2max",l:"VO2 Max",u:""},{k:"walkingSteadiness",l:"Walking Steadiness",u:"%"},
   ]},
   { id:"training", name:"TRAINING", src:"FITBOD", col:"#fbbf24", rows:[
-    {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"workoutVol",l:"Total Volume",u:"lbs",hi:true},
-    {k:"workoutDur",l:"Duration",u:"min"},{k:"fitbodSets",l:"Total Sets",u:""},
-    {k:"fitbodWorkingSets",l:"Working Sets",u:""},{k:"fitbodTotalReps",l:"Total Reps",u:""},
-    {k:"fitbodExerciseCount",l:"Exercises",u:""},{k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
-    {k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
+    {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
+    {k:"workoutVol",l:"Total Volume",u:"lbs",hi:true},{k:"workoutDur",l:"Duration",u:"min"},
+    {k:"fitbodSets",l:"Total Sets",u:""},{k:"fitbodWorkingSets",l:"Working Sets",u:""},
+    {k:"fitbodTotalReps",l:"Total Reps",u:""},{k:"fitbodExerciseCount",l:"Exercises",u:""},
+    {k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
   ]},
   { id:"measurements", name:"BODY MEASUREMENTS", src:"MANUAL", col:"#00e5ff", rows:[
     {k:"waistIn",    l:"Waist",        u:"in", hi:true, lib:true},
@@ -1165,11 +1165,11 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       {k:"avgHR",l:"Avg Heart Rate (bpm)"},{k:"standHours",l:"Stand Hours"},
       {k:"flightsClimbed",l:"Flights Climbed"},{k:"vo2max",l:"VO2 Max"},
       // Training (Fitbod)
-      {k:"workoutType",l:"Workout Type"},{k:"workoutVol",l:"Total Volume (lbs)"},
-      {k:"workoutDur",l:"Duration (min)"},{k:"fitbodSets",l:"Total Sets"},
-      {k:"fitbodWorkingSets",l:"Working Sets"},{k:"fitbodWarmupSets",l:"Warmup Sets"},
-      {k:"fitbodTotalReps",l:"Total Reps"},{k:"fitbodExerciseCount",l:"Exercise Count"},
-      {k:"fitbodMaxWeightLbs",l:"Max Weight (lbs)"},{k:"fitbodMuscleGroups",l:"Muscle Groups"},
+      {k:"workoutType",l:"Workout Type"},{k:"fitbodMuscleGroups",l:"Muscle Groups"},
+      {k:"workoutVol",l:"Total Volume (lbs)"},{k:"workoutDur",l:"Duration (min)"},
+      {k:"fitbodSets",l:"Total Sets"},{k:"fitbodWorkingSets",l:"Working Sets"},
+      {k:"fitbodWarmupSets",l:"Warmup Sets"},{k:"fitbodTotalReps",l:"Total Reps"},
+      {k:"fitbodExerciseCount",l:"Exercise Count"},{k:"fitbodMaxWeightLbs",l:"Max Weight (lbs)"},
       // Body measurements (inches)
       {k:"waistIn",l:"Waist (in)"},{k:"chestIn",l:"Chest (in)"},{k:"hipsIn",l:"Hips (in)"},
       {k:"neckIn",l:"Neck (in)"},{k:"shouldersIn",l:"Shoulders (in)"},
