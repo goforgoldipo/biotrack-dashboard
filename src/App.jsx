@@ -1825,7 +1825,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
       {/* ── NAV */}
       <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto"}}>
-        {[["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
+        {[["summary","📈 SUMMARY"],["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
           <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 20px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"2px",whiteSpace:"nowrap",transition:"color 0.15s"}}>
             {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"5px"}}>●</span>}
           </button>
@@ -2021,6 +2021,226 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       )}
 
       {/* ══════════ DASHBOARD TAB ══════════ */}
+      {tab==="summary" && (() => {
+        // ── Date range options
+        const RANGES = [
+          {id:"7d",  label:"Last 7 days"},
+          {id:"30d", label:"Last 30 days"},
+          {id:"90d", label:"Last 3 months"},
+          {id:"180d",label:"Last 6 months"},
+          {id:"365d",label:"This year"},
+          {id:"all", label:"All time"},
+        ];
+        const [summaryRange, setSummaryRange] = useState("30d");
+        const rangeDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:9999;
+
+        // Get history filtered to range
+        const allDays = (history||[]).map(h=>({...h,isDemo:false}));
+        const rangeData = allDays.slice(0, Math.min(rangeDays, allDays.length));
+        const today = rangeData[0] || {};
+        const oldest = rangeData[rangeData.length-1] || {};
+
+        // Sparkline SVG helper
+        const Sparkline = ({vals, col="#00ff9d", h=52, w=180}) => {
+          const nums = vals.filter(v=>typeof v==="number"&&!isNaN(v));
+          if(nums.length < 2) return <div style={{height:h,width:w,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"10px",color:"#333"}}>no data</span></div>;
+          const min=Math.min(...nums), max=Math.max(...nums);
+          const range=max-min||1;
+          const pts = nums.slice().reverse().map((v,i)=>{
+            const x = (i/(nums.length-1))*w;
+            const y = h - ((v-min)/range)*(h-6) - 3;
+            return `${x},${y}`;
+          }).join(" ");
+          const lastY = h - ((nums[0]-min)/range)*(h-6) - 3;
+          return (
+            <svg width={w} height={h} style={{overflow:"visible"}}>
+              <defs>
+                <linearGradient id={`sg${col.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={col} stopOpacity="0.3"/>
+                  <stop offset="100%" stopColor={col} stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              <polyline points={pts} fill="none" stroke={col} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+              <circle cx={w} cy={lastY} r="3" fill={col}/>
+            </svg>
+          );
+        };
+
+        // Metric card builder
+        const pct = (cur, old) => {
+          if(cur==null||old==null||old===0) return null;
+          return ((cur-old)/Math.abs(old)*100).toFixed(1);
+        };
+        const fmtVal = (v, unit) => {
+          if(v==null) return "—";
+          if(unit==="%") return v.toFixed(1)+"%";
+          if(unit==="lbs"||unit==="lb") return v.toFixed(1)+" lbs";
+          if(unit==="hrs") return v.toFixed(1)+"h";
+          if(unit==="ms") return Math.round(v)+" ms";
+          if(unit==="bpm") return Math.round(v)+" bpm";
+          if(unit==="kcal") return Math.round(v)+" kcal";
+          if(unit==="g") return Math.round(v)+"g";
+          if(unit==="k") return (v/1000).toFixed(1)+"k";
+          return typeof v==="number"?v.toFixed(1):v;
+        };
+
+        const METRICS = [
+          {key:"weight",       label:"Weight",          unit:"lbs", col:"#60a5fa", lowerBetter:true},
+          {key:"bodyFat",      label:"Body Fat",         unit:"%",  col:"#f87171", lowerBetter:true},
+          {key:"leanMass",     label:"Lean Mass",        unit:"lbs",col:"#4ade80"},
+          {key:"hrv",          label:"HRV",              unit:"ms", col:"#a78bfa"},
+          {key:"restingHR",    label:"Resting HR",       unit:"bpm",col:"#fb7185", lowerBetter:true},
+          {key:"sleepDuration",label:"Sleep",            unit:"hrs",col:"#818cf8"},
+          {key:"steps",        label:"Steps",            unit:"k",  col:"#34d399"},
+          {key:"calories",     label:"Calories",         unit:"kcal",col:"#fbbf24"},
+          {key:"protein",      label:"Protein",          unit:"g",  col:"#f97316"},
+          {key:"workoutVol",   label:"Workout Volume",   unit:"lbs",col:"#e879f9"},
+          {key:"activeCalories",label:"Active Calories", unit:"kcal",col:"#2dd4bf"},
+          {key:"spo2",         label:"SpO2",             unit:"%",  col:"#67e8f9"},
+        ];
+
+        // Today's highlights for right sidebar
+        const highlights = METRICS.map(m=>{
+          const cur  = today[m.key];
+          const prev = oldest[m.key];
+          const p    = pct(cur, prev);
+          return {...m, cur, prev, p};
+        }).filter(m=>m.cur!=null);
+
+        // Date range label
+        const rangeLabel = (() => {
+          if(!rangeData.length) return "";
+          const newest = rangeData[0]?.syncDate||"";
+          const old2   = rangeData[rangeData.length-1]?.syncDate||"";
+          return old2 && newest ? `${old2} – ${newest}` : newest;
+        })();
+
+        return (
+        <div style={{minHeight:"100vh",background:C.bg}}>
+          {/* Top bar */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:`1px solid ${C.bord}`,background:"#07070e",flexWrap:"wrap",gap:"10px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+              <span style={{fontSize:"18px",fontWeight:"bold",color:C.text1,letterSpacing:"1px"}}>📈 Summary</span>
+              {rangeLabel && <span style={{fontSize:"11px",color:C.dim,background:C.surf,padding:"4px 10px",borderRadius:"4px"}}>{rangeLabel}</span>}
+            </div>
+            {/* Range selector */}
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+              {RANGES.map(r=>(
+                <button key={r.id} onClick={()=>setSummaryRange(r.id)}
+                  style={{padding:"6px 14px",background:summaryRange===r.id?"#00ff9d":"transparent",
+                    border:`1px solid ${summaryRange===r.id?"#00ff9d":C.bord2}`,
+                    color:summaryRange===r.id?"#000":C.text2,
+                    cursor:"pointer",fontSize:"10px",borderRadius:"4px",
+                    fontWeight:summaryRange===r.id?"bold":"normal",letterSpacing:"0.5px"}}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{display:"flex",gap:0}}>
+            {/* Main metric cards grid */}
+            <div style={{flex:1,padding:"20px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"14px",alignContent:"start"}}>
+              {METRICS.map(m=>{
+                const vals = rangeData.map(d=>d[m.key]).filter(v=>v!=null);
+                const cur  = today[m.key];
+                const prev = oldest[m.key];
+                const p    = pct(cur, prev);
+                const pNum = p!=null ? parseFloat(p) : null;
+                const isGood = m.lowerBetter ? (pNum!=null&&pNum<0) : (pNum!=null&&pNum>0);
+                const isBad  = m.lowerBetter ? (pNum!=null&&pNum>0) : (pNum!=null&&pNum<0);
+                return (
+                  <div key={m.key} style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px"}}>
+                    <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1.5px",fontWeight:"600"}}>{m.label.toUpperCase()}</div>
+                    <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:"8px"}}>
+                      <div>
+                        <div style={{fontSize:"26px",fontWeight:"bold",color:C.text1,lineHeight:"1.1",fontFamily:"'Courier New',monospace"}}>
+                          {fmtVal(cur, m.unit)}
+                        </div>
+                        {prev!=null && cur!=null && (
+                          <div style={{fontSize:"11px",color:C.dim,marginTop:"3px"}}>
+                            from {fmtVal(prev, m.unit)}
+                          </div>
+                        )}
+                      </div>
+                      {pNum!=null && (
+                        <div style={{display:"flex",alignItems:"center",gap:"4px",
+                          background:isGood?"#4ade8020":isBad?"#f8717120":"#ffffff10",
+                          border:`1px solid ${isGood?"#4ade8040":isBad?"#f8717140":"#ffffff15"}`,
+                          borderRadius:"6px",padding:"4px 10px",flexShrink:0}}>
+                          <span style={{fontSize:"13px"}}>{isGood?"↑":isBad?"↓":"→"}</span>
+                          <span style={{fontSize:"12px",fontWeight:"bold",color:isGood?"#4ade80":isBad?"#f87171":C.text3}}>
+                            {Math.abs(pNum)}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Sparkline */}
+                    <div style={{marginTop:"6px"}}>
+                      <Sparkline vals={vals} col={m.col} h={48} w={240}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Right sidebar */}
+            <div style={{width:"280px",minWidth:"280px",borderLeft:`1px solid ${C.bord}`,padding:"20px",display:"flex",flexDirection:"column",gap:"16px"}}>
+              {/* Today's breakdown */}
+              <div>
+                <div style={{fontSize:"16px",fontWeight:"bold",color:C.text1,marginBottom:"14px"}}>Today's Breakdown</div>
+                {highlights.slice(0,8).map(m=>{
+                  const pNum = m.p!=null ? parseFloat(m.p) : null;
+                  const isGood = m.lowerBetter ? (pNum!=null&&pNum<0) : (pNum!=null&&pNum>0);
+                  const isBad  = m.lowerBetter ? (pNum!=null&&pNum>0) : (pNum!=null&&pNum<0);
+                  return (
+                    <div key={m.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.bord}`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:m.col,flexShrink:0}}/>
+                        <span style={{fontSize:"12px",color:C.text2}}>{m.label}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+                        <span style={{fontSize:"12px",fontWeight:"600",color:C.text1,fontFamily:"'Courier New',monospace"}}>{fmtVal(m.cur,m.unit)}</span>
+                        {pNum!=null && (
+                          <span style={{fontSize:"10px",color:isGood?"#4ade80":isBad?"#f87171":C.dim}}>
+                            {pNum>0?"+":""}{pNum}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Recent changes */}
+              <div>
+                <div style={{fontSize:"14px",fontWeight:"bold",color:C.text1,marginBottom:"10px"}}>Recent Changes</div>
+                {highlights.filter(m=>m.p!=null).sort((a,b)=>Math.abs(parseFloat(b.p))-Math.abs(parseFloat(a.p))).slice(0,6).map(m=>{
+                  const pNum = parseFloat(m.p);
+                  const isGood = m.lowerBetter ? pNum<0 : pNum>0;
+                  return (
+                    <div key={m.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.bord}`}}>
+                      <span style={{fontSize:"11px",color:C.text2}}>{m.label}</span>
+                      <span style={{fontSize:"11px",fontWeight:"bold",color:isGood?"#4ade80":"#f87171"}}>
+                        {pNum>0?"+":""}{pNum}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Data coverage */}
+              <div style={{background:C.surf2,border:`1px solid ${C.bord}`,borderRadius:"8px",padding:"12px"}}>
+                <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1px",marginBottom:"8px"}}>DATA COVERAGE</div>
+                <div style={{fontSize:"13px",color:C.text1,marginBottom:"4px"}}>{rangeData.length} days</div>
+                <div style={{fontSize:"10px",color:C.dim}}>{METRICS.filter(m=>today[m.key]!=null).length} of {METRICS.length} metrics today</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
       {tab==="dashboard" && (
         <>
           {/* Period selector */}
