@@ -1829,7 +1829,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
       {/* ── NAV */}
       <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto"}}>
-        {[["summary","📈 SUMMARY"],["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
+        {[["dashboard","📊 DASHBOARD"],["coach","🧠 AI COACH"],["log","📚 LOG"],["summary","📈 SUMMARY"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
           <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 20px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"2px",whiteSpace:"nowrap",transition:"color 0.15s"}}>
             {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"5px"}}>●</span>}
           </button>
@@ -2043,9 +2043,9 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
         const today = rangeData[0] || {};
         const oldest = rangeData[rangeData.length-1] || {};
 
-        // Sparkline SVG helper
-        const Sparkline = ({vals, col="#00ff9d", h=52, w=180}) => {
-          const nums = vals.filter(v=>typeof v==="number"&&!isNaN(v));
+        // Sparkline SVG helper — plain function (not a React component) to avoid new-type-each-render
+        const sparkline = (vals, col="#00ff9d", h=52, w=180) => {
+          const nums = (vals||[]).filter(v=>typeof v==="number"&&!isNaN(v));
           if(nums.length < 2) return <div style={{height:h,width:w,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"10px",color:"#333"}}>no data</span></div>;
           const min=Math.min(...nums), max=Math.max(...nums);
           const range=max-min||1;
@@ -2057,12 +2057,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           const lastY = h - ((nums[0]-min)/range)*(h-6) - 3;
           return (
             <svg width={w} height={h} style={{overflow:"visible"}}>
-              <defs>
-                <linearGradient id={`sg${col.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={col} stopOpacity="0.3"/>
-                  <stop offset="100%" stopColor={col} stopOpacity="0"/>
-                </linearGradient>
-              </defs>
               <polyline points={pts} fill="none" stroke={col} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
               <circle cx={w} cy={lastY} r="3" fill={col}/>
             </svg>
@@ -2180,7 +2174,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     </div>
                     {/* Sparkline */}
                     <div style={{marginTop:"6px"}}>
-                      <Sparkline vals={vals} col={m.col} h={48} w={240}/>
+                      {sparkline(vals, m.col, 48, 240)}
                     </div>
                   </div>
                 );
