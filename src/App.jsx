@@ -2091,7 +2091,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       {/* ══════════ SUMMARY TAB ══════════ */}
       {tab==="summary" && (()=>{
         const rdDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:99999;
-        const allDays2 = (history||[]).map(h=>({...h,isDemo:false}));
+        const allDays2 = (liveHistory||[]).map(h=>({...h,isDemo:false}));
         const rangeData2 = allDays2.slice(0, Math.min(rdDays, allDays2.length));
         const todaySnap = rangeData2[0] || {};
         const oldSnap   = rangeData2[rangeData2.length-1] || {};
