@@ -737,18 +737,18 @@ const SUMMARY_RANGES = [
 ];
 
 const SUMMARY_METRICS = [
-  {key:"weight",        label:"Weight",          unit:"lbs", col:"#60a5fa", lowerBetter:true},
-  {key:"bodyFat",       label:"Body Fat",         unit:"%",   col:"#f87171", lowerBetter:true},
-  {key:"leanMass",      label:"Lean Mass",        unit:"lbs", col:"#4ade80"},
-  {key:"hrv",           label:"HRV",              unit:"ms",  col:"#a78bfa"},
-  {key:"restingHR",     label:"Resting HR",       unit:"bpm", col:"#fb7185", lowerBetter:true},
-  {key:"sleepDuration", label:"Sleep",            unit:"hrs", col:"#818cf8"},
-  {key:"steps",         label:"Steps",            unit:"k",   col:"#34d399"},
-  {key:"calories",      label:"Calories",         unit:"kcal",col:"#fbbf24"},
-  {key:"protein",       label:"Protein",          unit:"g",   col:"#f97316"},
-  {key:"workoutVol",    label:"Workout Volume",   unit:"lbs", col:"#e879f9"},
-  {key:"activeCalories",label:"Active Calories",  unit:"kcal",col:"#2dd4bf"},
-  {key:"spo2",          label:"SpO2",             unit:"%",   col:"#67e8f9"},
+  {key:"weight",     label:"Weight",          unit:"lbs", col:"#60a5fa", lowerBetter:true},
+  {key:"bodyFat",    label:"Body Fat",         unit:"%",   col:"#f87171", lowerBetter:true},
+  {key:"leanMass",   label:"Lean Mass",        unit:"lbs", col:"#4ade80"},
+  {key:"hrv",        label:"HRV",              unit:"ms",  col:"#a78bfa"},
+  {key:"restingHR",  label:"Resting HR",       unit:"bpm", col:"#fb7185", lowerBetter:true},
+  {key:"sleepDur",   label:"Sleep",            unit:"hrs", col:"#818cf8"},
+  {key:"steps",      label:"Steps",            unit:"k",   col:"#34d399"},
+  {key:"calories",   label:"Calories",         unit:"kcal",col:"#fbbf24"},
+  {key:"protein",    label:"Protein",          unit:"g",   col:"#f97316"},
+  {key:"workoutVol", label:"Workout Volume",   unit:"lbs", col:"#e879f9"},
+  {key:"calsBurned", label:"Active Calories",  unit:"kcal",col:"#2dd4bf"},
+  {key:"spo2",       label:"SpO2",             unit:"%",   col:"#67e8f9"},
 ];
 
 function summarySparkline(vals, col, h, w) {
@@ -2093,10 +2093,16 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
         const rdDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:99999;
         const allDays2 = (liveHistory||[]).map(h=>({...h,isDemo:false}));
         const rangeData2 = allDays2.slice(0, Math.min(rdDays, allDays2.length));
-        const todaySnap = rangeData2[0] || {};
-        const oldSnap   = rangeData2[rangeData2.length-1] || {};
+        // Use most-recent non-null value for each metric (avoids partial today data like 76 steps at 6am)
+        const latestVal = (key) => rangeData2.find(d => d[key] != null && d[key] !== 0)?.[key] ?? null;
+        const oldestVal = (key) => {
+          for (let i = rangeData2.length - 1; i >= 0; i--) {
+            if (rangeData2[i][key] != null && rangeData2[i][key] !== 0) return rangeData2[i][key];
+          }
+          return null;
+        };
         const highlights2 = SUMMARY_METRICS.map(m=>{
-          const cur=todaySnap[m.key], prev=oldSnap[m.key], p=summaryPct(cur,prev);
+          const cur=latestVal(m.key), prev=oldestVal(m.key), p=summaryPct(cur,prev);
           return {...m,cur,prev,p};
         }).filter(m=>m.cur!=null);
         const rl = rangeData2.length ? `${(rangeData2[rangeData2.length-1]?.syncDate||"")} – ${(rangeData2[0]?.syncDate||"")}` : "";
@@ -2124,7 +2130,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <div style={{flex:1,padding:"20px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"14px",alignContent:"start"}}>
                 {SUMMARY_METRICS.map(m=>{
                   const vals=rangeData2.map(d=>d[m.key]).filter(v=>typeof v==="number"&&!isNaN(v));
-                  const cur=todaySnap[m.key], prev=oldSnap[m.key];
+                  const cur=latestVal(m.key), prev=oldestVal(m.key);
                   const p=summaryPct(cur,prev);
                   const pNum=p!=null?parseFloat(p):null;
                   const isGood=m.lowerBetter?(pNum!=null&&pNum<0):(pNum!=null&&pNum>0);
@@ -2186,7 +2192,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 <div style={{background:C.surf2,border:`1px solid ${C.bord}`,borderRadius:"8px",padding:"12px"}}>
                   <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1px",marginBottom:"8px"}}>DATA COVERAGE</div>
                   <div style={{fontSize:"13px",color:C.text1,marginBottom:"4px"}}>{rangeData2.length} days</div>
-                  <div style={{fontSize:"10px",color:C.dim}}>{SUMMARY_METRICS.filter(m=>todaySnap[m.key]!=null).length} of {SUMMARY_METRICS.length} metrics today</div>
+                  <div style={{fontSize:"10px",color:C.dim}}>{SUMMARY_METRICS.filter(m=>latestVal(m.key)!=null).length} of {SUMMARY_METRICS.length} metrics with data</div>
                 </div>
               </div>
             </div>
