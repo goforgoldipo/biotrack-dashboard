@@ -1399,33 +1399,6 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
 
   const COACHES = [
     {
-      id:"workout", icon:"💪", name:"WORKOUT COACH", col:"#fbbf24",
-      sys:"You are an elite strength & conditioning coach specializing in body recomposition for a vegan athlete targeting 10% body fat. You design evidence-based programs that maximize muscle retention during a caloric deficit. Be specific with exercises, sets×reps, load, tempo, and rest. Reference actual numbers from the client's training history and recovery data.",
-      defaultDailyPrompt:`Analyze ALL of my body data — segmental body fat % by region (trunk, right arm, left arm, right leg, left leg), body measurements (waist, chest, hips, shoulders, biceps, thighs, calves), per-muscle-group training volume over 30 days, body composition trend (weight, body fat %, lean mass), recovery (HRV, sleep score, readiness), and nutrition — then design the best possible workout for me today and a 1–4 week training plan.
-
-HARD CONSTRAINTS (non-negotiable):
-• Maximum 7 exercises per session
-• Maximum 4 sets per exercise
-• Maximum 75 minutes total
-
-Everything else — exercise selection, exercise type, movement patterns, order, rep ranges, tempo, rest periods, training split — you decide entirely based on what my body data tells you I need most. Use my segmental fat % to identify which regions need priority work. Use my 30-day per-muscle volume to identify what has been undertrained or overtrained. Use my recovery metrics to calibrate today's intensity. Let the data drive every decision — do not default to generic program templates.
-
-Structure your response as:
-1. BODY COMPOSITION ANALYSIS: What does my segmental fat % (by region) and body measurements reveal about where I carry fat and which muscle groups are underdeveloped? Be specific — use the actual % numbers.
-2. TRAINING HISTORY ANALYSIS: Which muscle groups are lagging in volume over the last 30 days? What's the distribution? What does that tell you about what needs priority?
-3. RECOVERY ANALYSIS: What do my HRV, readiness, and sleep scores over the last 7 days tell you about appropriate intensity today?
-4. 1–4 WEEK PROGRAM: Your recommended training plan based on my data — day-by-day, showing exercises, sets×reps×load. Justify every choice with my body data.
-5. TODAY'S WORKOUT: Exactly what to do today — up to 7 exercises, up to 4 sets each. For each exercise: sets×reps×weight, rest period, why this exercise was chosen based on my data.
-
-All decisions must be justified by my actual numbers. Do not prescribe a generic program — design this for my specific body.`,
-      questions:[
-        {id:"today",label:"🎯 TODAY'S WORKOUT",prompt:"Based on my recovery data (HRV, sleep, resting HR, prior day volume) and training history, give me the exact workout to do today. Include warm-up, main lifts with sets×reps×load, accessories, and finisher. Consider which muscle groups I've trained recently."},
-        {id:"next7",label:"📅 NEXT 7 DAYS",prompt:"Design my complete 7-day workout plan optimized for my body fat goal. Balance muscle groups (push/pull/legs/core), include rest days based on my recovery patterns, and specify exact exercises, sets×reps×load for each day. Identify weak points from my historical volume data."},
-        {id:"feedback",label:"📊 YESTERDAY'S FEEDBACK",prompt:"Review yesterday's workout performance. Analyze volume vs historical averages per muscle group, compare to my recovery state. Grade the session A-F and tell me what to adjust today."},
-        {id:"weak",label:"🔍 MY WEAK POINTS",prompt:"Analyze my training history across all muscle groups and identify the 3 weakest areas that are limiting my physique. Give specific programming changes to bring them up."},
-      ]
-    },
-    {
       id:"food", icon:"🥗", name:"FOOD COACH", col:"#34d399",
       sys:"You are an elite sports nutritionist and registered dietitian specializing in whole food plant-powered vegan athletes targeting body recomposition. You design meal plans that maximize protein (180g+), optimize macros for fat loss, and use real whole foods — not processed fake meats. Be specific with foods, portions, calories, and macros per meal.",
       defaultDailyPrompt:`Analyze ALL of my data — nutrition history, body composition trend, training load, activity, sleep, and recovery — then build me the optimal daily macro eating plan to hit 10% body fat while preserving maximum lean muscle.
@@ -1508,7 +1481,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
     },
   ];
 
-  const [activeCoach,setActiveCoach]=useState("workout");
+  const [activeCoach,setActiveCoach]=useState("food");
   const [coachLLMs,setCoachLLMs]=useState(()=>{
     try { return JSON.parse(localStorage.getItem("bt_coach_llms")) || {}; } catch { return {}; }
   });
@@ -2275,15 +2248,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           {claudeKey && (
             <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
               <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected · {COACHES.length} coaches ready</span>
-              <div style={{display:"flex",gap:"8px"}}>
-                <button onClick={async ()=>{
-                  for(const coach of COACHES){
-                    const llm = coachLLMs[coach.id]||"claude";
-                    await analyze(llm, coach.id, "daily");
-                  }
-                }} style={{...bFill("#00ff9d"),padding:"6px 14px",fontSize:"10px"}}>☰ RUN ALL {COACHES.length} COACHES NOW</button>
-                <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
-              </div>
+              <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
             </div>
           )}
 
@@ -2319,8 +2284,8 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <span style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:activeCoachObj.col,pointerEvents:"none",fontSize:"12px"}}>▾</span>
             </div>
 
-            {/* Run all + notifications compact */}
-            <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"center",flexWrap:"wrap"}}>
+            {/* Notifications compact */}
+            <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"center"}}>
               {notifPermission !== "granted" && (
                 <button onClick={requestNotifPermission}
                   style={{...bOut("#60a5fa"),padding:"7px 12px",fontSize:"10px"}}>
@@ -2330,14 +2295,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               {notifPermission === "granted" && (
                 <span style={{fontSize:"10px",color:"#4ade80"}}>🔔 ON</span>
               )}
-              <button onClick={async()=>{
-                for(const coach of COACHES){
-                  const llm=coachLLMs[coach.id]||"claude";
-                  await analyze(llm,coach.id,"daily");
-                }
-              }} style={{...bFill("#00ff9d"),padding:"7px 14px",fontSize:"10px"}}>
-                ☰ RUN ALL
-              </button>
             </div>
           </div>
 
@@ -2396,7 +2353,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                               {hasDaily && <span style={{color:"#4ade80",fontSize:"10px",marginLeft:"6px"}}>✓</span>}
                             </div>
                             <div style={{fontSize:"10px",color:C.text3,lineHeight:"1.5"}}>
-                              {coach.id==="workout" && "Training plan, volume, muscle groups"}
                               {coach.id==="food" && "Macros, nutrition, daily meal plan"}
                               {coach.id==="sleep" && "Sleep quality, HRV, recovery protocol"}
                               {coach.id==="progress" && "Body recomposition wins & focus"}
