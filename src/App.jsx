@@ -1679,6 +1679,10 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
   const [humeScanning, setHumeScanning] = useState(false);
   const [humeScanResult, setHumeScanResult] = useState(null);
   const [humeScanError, setHumeScanError] = useState("");
+  const [summaryRange, setSummaryRange] = useState("30d");
+  const [logCoachFilter,setLogCoachFilter]=useState("all");
+  const [logTypeFilter,setLogTypeFilter]=useState("all");
+  const [expandedEntries,setExpandedEntries]=useState({});
   const humeFileRef = useRef(null);
 
   const scanHumeScreenshot = async (files) => {
@@ -2031,7 +2035,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           {id:"365d",label:"This year"},
           {id:"all", label:"All time"},
         ];
-        const [summaryRange, setSummaryRange] = useState("30d");
         const rangeDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:9999;
 
         // Get history filtered to range
@@ -2785,10 +2788,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
         // Sort newest first
         allEntries.sort((a,b)=>new Date(b.ts)-new Date(a.ts));
-
-        const [logCoachFilter,setLogCoachFilter]=useState("all");
-        const [logTypeFilter,setLogTypeFilter]=useState("all");
-        const [expandedEntries,setExpandedEntries]=useState({});
 
         const filtered = allEntries.filter(e=>{
           if(logCoachFilter!=="all" && e.coachId!==logCoachFilter) return false;
