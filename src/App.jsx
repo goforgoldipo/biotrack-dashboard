@@ -2357,7 +2357,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                               {coach.id==="sleep" && "Sleep quality, HRV, recovery protocol"}
                               {coach.id==="progress" && "Body recomposition wins & focus"}
                               {coach.id==="celebrate" && "Milestones, PRs & momentum"}
-                              {!["workout","food","sleep","progress","celebrate"].includes(coach.id) && "Ask me anything"}
+                              {!["food","sleep","progress","celebrate"].includes(coach.id) && "Ask me anything"}
                             </div>
                           </button>
                         );
