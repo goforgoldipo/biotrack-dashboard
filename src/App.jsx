@@ -754,9 +754,7 @@ const SUMMARY_METRICS = [
 function summarySparkline(vals, col, h, w) {
   const nums = (vals||[]).filter(v => typeof v === "number" && !isNaN(v));
   if (nums.length < 2) {
-    return React.createElement("div", {style:{height:h,width:w,display:"flex",alignItems:"center",justifyContent:"center"}},
-      React.createElement("span", {style:{fontSize:"10px",color:"#444"}}, "—")
-    );
+    return <div style={{height:h,width:w,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:"10px",color:"#444"}}>—</span></div>;
   }
   const mn = Math.min(...nums), mx = Math.max(...nums);
   const rng = mx - mn || 1;
@@ -766,9 +764,11 @@ function summarySparkline(vals, col, h, w) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   const lastY = (h - ((nums[0] - mn) / rng) * (h - 6) - 3).toFixed(1);
-  return React.createElement("svg", {width:w, height:h, style:{overflow:"visible", display:"block"}},
-    React.createElement("polyline", {points:pts, fill:"none", stroke:col, strokeWidth:"1.5", strokeLinejoin:"round", strokeLinecap:"round"}),
-    React.createElement("circle", {cx:w, cy:lastY, r:"3", fill:col})
+  return (
+    <svg width={w} height={h} style={{overflow:"visible",display:"block"}}>
+      <polyline points={pts} fill="none" stroke={col} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>
+      <circle cx={w} cy={lastY} r="3" fill={col}/>
+    </svg>
   );
 }
 
