@@ -2319,18 +2319,6 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <span style={{position:"absolute",right:"12px",top:"50%",transform:"translateY(-50%)",color:activeCoachObj.col,pointerEvents:"none",fontSize:"12px"}}>▾</span>
             </div>
 
-            {/* LLM picker */}
-            <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
-              {LLMS.map(l=>(
-                <button key={l.id} onClick={()=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:l.id}))}
-                  style={{padding:"8px 12px",background:activeLLM===l.id?l.col+"30":"transparent",
-                    border:`1px solid ${activeLLM===l.id?l.col:C.bord2}`,color:activeLLM===l.id?l.col:C.text3,
-                    cursor:"pointer",fontSize:"11px",borderRadius:"4px",fontWeight:activeLLM===l.id?"bold":"normal"}}>
-                  {l.icon} {l.name}
-                </button>
-              ))}
-            </div>
-
             {/* Run all + notifications compact */}
             <div style={{display:"flex",gap:"6px",marginLeft:"auto",alignItems:"center",flexWrap:"wrap"}}>
               {notifPermission !== "granted" && (
@@ -2381,20 +2369,47 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 marginBottom:"12px",paddingRight:"2px",
               }}>
                 {thread.length===0 && !isWaiting ? (
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,padding:"48px 24px",textAlign:"center",minHeight:"220px"}}>
-                    <div style={{fontSize:"44px",marginBottom:"14px",opacity:0.45}}>{activeCoachObj.icon}</div>
-                    <div style={{fontSize:"14px",color:C.text1,fontWeight:"600",letterSpacing:"1px",marginBottom:"10px"}}>
-                      {activeCoachObj.name}
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,padding:"32px 16px",minHeight:"220px"}}>
+                    {/* Greeting */}
+                    <div style={{fontSize:"13px",color:C.text3,marginBottom:"24px",textAlign:"center"}}>
+                      {liveData ? <span style={{color:"#4ade80"}}>✓ Live data loaded · {todayDateKey}</span> : "Demo data active"}
+                      <span style={{color:C.dim}}> · 30-day context ready</span>
                     </div>
-                    <div style={{fontSize:"12px",color:C.text3,lineHeight:"1.8",maxWidth:"380px"}}>
-                      Your last 30 days of health data is loaded and ready.<br/>
-                      Ask me anything — or tap <span style={{color:activeCoachObj.col,fontWeight:"bold"}}>Daily Brief</span> below for a full analysis.
+                    {/* Coach selection bubbles */}
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"10px",width:"100%",maxWidth:"700px"}}>
+                      {COACHES.map(coach=>{
+                        const hasDaily=analyses[`daily_${coach.id}_${coachLLMs[coach.id]||"claude"}_${todayDateKey}`];
+                        const isActive=activeCoach===coach.id;
+                        return (
+                          <button key={coach.id}
+                            onClick={()=>{ setActiveCoach(coach.id); }}
+                            style={{
+                              background:isActive?coach.col+"20":C.surf,
+                              border:`1px solid ${isActive?coach.col:C.bord2}`,
+                              borderRadius:"10px",padding:"14px 16px",
+                              cursor:"pointer",textAlign:"left",
+                              transition:"border-color 0.15s",
+                            }}>
+                            <div style={{fontSize:"20px",marginBottom:"6px"}}>{coach.icon}</div>
+                            <div style={{fontSize:"12px",color:isActive?coach.col:C.text1,fontWeight:"bold",letterSpacing:"0.5px",marginBottom:"4px"}}>
+                              {coach.name}
+                              {hasDaily && <span style={{color:"#4ade80",fontSize:"10px",marginLeft:"6px"}}>✓</span>}
+                            </div>
+                            <div style={{fontSize:"10px",color:C.text3,lineHeight:"1.5"}}>
+                              {coach.id==="workout" && "Training plan, volume, muscle groups"}
+                              {coach.id==="food" && "Macros, nutrition, daily meal plan"}
+                              {coach.id==="sleep" && "Sleep quality, HRV, recovery protocol"}
+                              {coach.id==="progress" && "Body recomposition wins & focus"}
+                              {coach.id==="celebrate" && "Milestones, PRs & momentum"}
+                              {!["workout","food","sleep","progress","celebrate"].includes(coach.id) && "Ask me anything"}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
-                    {liveData && (
-                      <div style={{marginTop:"14px",fontSize:"10px",color:"#4ade80",background:"#4ade8010",border:"1px solid #4ade8030",borderRadius:"4px",padding:"5px 14px",letterSpacing:"0.5px"}}>
-                        ✓ Synced {todayDateKey}
-                      </div>
-                    )}
+                    <div style={{marginTop:"20px",fontSize:"11px",color:C.dim,textAlign:"center"}}>
+                      Select a coach above, then ask anything or tap <span style={{color:activeCoachObj.col}}>▶ Daily Brief</span>
+                    </div>
                   </div>
                 ) : (
                   thread.map((msg,i)=>{
@@ -2482,24 +2497,53 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </div>
 
               {/* Chat input — always visible */}
-              <div style={{display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"8px"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:"6px",marginBottom:"8px"}}>
                 <textarea
                   value={chatDraft[activeCoachObj.id]||""}
                   onChange={e=>setChatDraft(p=>({...p,[activeCoachObj.id]:e.target.value}))}
                   onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat(activeCoachObj.id,activeLLM);}}}
                   placeholder={`Ask ${activeCoachObj.name} anything… (Enter to send, Shift+Enter for new line)`}
                   disabled={isWaiting}
-                  style={{...inp,flex:1,minHeight:"54px",maxHeight:"180px",resize:"vertical",
+                  style={{...inp,width:"100%",boxSizing:"border-box",minHeight:"54px",maxHeight:"180px",resize:"vertical",
                     fontSize:"13px",lineHeight:"1.6",opacity:isWaiting?0.5:1}}
                 />
-                <button onClick={()=>sendChat(activeCoachObj.id,activeLLM)}
-                  disabled={isWaiting||!chatDraft[activeCoachObj.id]?.trim()}
-                  style={{...bFill(activeCoachObj.col),padding:"12px 20px",fontSize:"12px",flexShrink:0,
-                    opacity:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?0.4:1,
-                    cursor:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?"default":"pointer",
-                    alignSelf:"flex-end",letterSpacing:"1px"}}>
-                  {isWaiting?"⟳":"▶ SEND"}
-                </button>
+                {/* Bottom row: model selector (left) + send button (right) */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"8px"}}>
+                  {/* Model dropdown */}
+                  <div style={{position:"relative"}}>
+                    <select
+                      value={activeLLM}
+                      onChange={e=>setCoachLLMs(p=>({...p,[activeCoachObj.id]:e.target.value}))}
+                      style={{
+                        background:"#0e0e18",
+                        border:`1px solid ${C.bord2}`,
+                        borderRadius:"6px",
+                        color:C.text2,
+                        fontSize:"11px",
+                        padding:"6px 28px 6px 10px",
+                        cursor:"pointer",
+                        appearance:"none",
+                        outline:"none",
+                        fontFamily:"'Courier New',monospace",
+                      }}>
+                      {LLMS.map(l=>(
+                        <option key={l.id} value={l.id} style={{background:"#0e0e18"}}>
+                          {l.icon} {l.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span style={{position:"absolute",right:"8px",top:"50%",transform:"translateY(-50%)",color:C.text3,pointerEvents:"none",fontSize:"10px"}}>▾</span>
+                  </div>
+                  {/* Send button */}
+                  <button onClick={()=>sendChat(activeCoachObj.id,activeLLM)}
+                    disabled={isWaiting||!chatDraft[activeCoachObj.id]?.trim()}
+                    style={{...bFill(activeCoachObj.col),padding:"8px 22px",fontSize:"12px",flexShrink:0,
+                      opacity:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?0.4:1,
+                      cursor:(isWaiting||!chatDraft[activeCoachObj.id]?.trim())?"default":"pointer",
+                      letterSpacing:"1px"}}>
+                    {isWaiting?"⟳":"▶ SEND"}
+                  </button>
+                </div>
               </div>
 
               {thread.length>0 && (
