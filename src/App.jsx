@@ -650,7 +650,7 @@ const mapImport = (p) => {
     dow: p.dow||["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][refDate.getDay()],
     date: p.date||refDate.toLocaleDateString("en-US",{month:"short",day:"numeric"}),
     steps: p.steps||p.stepCount, calsBurned: p.activeCalories||p.calsBurned||p.totalCaloriesBurned,
-    restingHR: p.restingHR||p.restingHeartRate, avgHR: p.avgHR||p.averageHeartRate,
+    restingHR: p.restingHR||p.restingHeartRate, avgHR: p.avgHR||p.averageHeartRate||p.heartRate,
     vo2max: p.vo2max||p.vo2Max, standHours: p.standHours,
     weight: p.weight||p.bodyWeight, bodyFat: p.bodyFat||p.bodyFatPercentage,
     leanMass: p.leanMass||p.leanBodyMass, bmi: p.bmi, visceralFat: p.visceralFat,
@@ -664,7 +664,7 @@ const mapImport = (p) => {
     lightSleep: p.lightSleep||p.sleepCoreMin, spo2: p.spo2, sleepingWristTemp: p.sleepingWristTemp,
     distanceMiles: p.distanceMiles||(p.distanceKm ? +((p.distanceKm)/1.60934).toFixed(2) : null),
     hrRecovery: p.hrRecovery, walkingSteadiness: p.walkingSteadiness,
-    respiratoryRate: p.respiratoryRate, flightsClimbed: p.flightsClimbed,
+    respiratoryRate: p.respiratoryRate, flightsClimbed: p.flightsClimbed||p.flights,
     sugar: p.sugar, cholesterol: p.cholesterol, saturatedFat: p.saturatedFat,
     potassium: p.potassium, calcium: p.calcium, iron: p.iron, vitaminC: p.vitaminC,
     sodium: p.sodium,
@@ -755,8 +755,40 @@ const SUMMARY_METRICS = [
   {key:"fat",           label:"Fat",               unit:"g",   col:"#f9a8d4"},
   {key:"workoutVol",    label:"Workout Volume",    unit:"lbs", col:"#e879f9"},
   {key:"workoutDur",    label:"Workout Duration",  unit:"min", col:"#c084fc"},
-  {key:"calsBurned",    label:"Active Calories",   unit:"kcal",col:"#2dd4bf"},
-  {key:"spo2",          label:"SpO2",              unit:"%",   col:"#67e8f9"},
+  {key:"calsBurned",       label:"Active Calories",    unit:"kcal",col:"#2dd4bf"},
+  {key:"spo2",             label:"SpO2",               unit:"%",   col:"#67e8f9"},
+  // ── Body composition extended
+  {key:"bmi",              label:"BMI",                unit:"",    col:"#94a3b8"},
+  {key:"bmr",              label:"Basal Metabolic Rate",unit:"kcal",col:"#fcd34d"},
+  {key:"muscleMass",       label:"Muscle Mass",        unit:"lbs", col:"#34d399"},
+  {key:"boneMass",         label:"Bone Mass",          unit:"lbs", col:"#cbd5e1"},
+  // ── Cardio extended
+  {key:"avgHR",            label:"Avg Heart Rate",     unit:"bpm", col:"#f43f5e"},
+  {key:"respiratoryRate",  label:"Respiratory Rate",   unit:"brpm",col:"#7dd3fc"},
+  // ── Sleep extended
+  {key:"remSleep",         label:"REM Sleep",          unit:"min", col:"#818cf8"},
+  {key:"lightSleep",       label:"Core Sleep",         unit:"min", col:"#a5b4fc"},
+  // ── Activity extended
+  {key:"flightsClimbed",   label:"Flights Climbed",    unit:"",    col:"#6ee7b7"},
+  // ── Nutrition extended
+  {key:"fiber",            label:"Fiber",              unit:"g",   col:"#84cc16"},
+  {key:"water",            label:"Water",              unit:"L",   col:"#38bdf8"},
+  {key:"sugar",            label:"Sugar",              unit:"g",   col:"#fb923c", lowerBetter:true},
+  {key:"sodium",           label:"Sodium",             unit:"mg",  col:"#f59e0b", lowerBetter:true},
+  // ── Training extended
+  {key:"fitbodSets",        label:"Total Sets",        unit:"",    col:"#d946ef"},
+  {key:"fitbodWorkingSets", label:"Working Sets",      unit:"",    col:"#c026d3"},
+  {key:"fitbodTotalReps",   label:"Total Reps",        unit:"",    col:"#a855f7"},
+  {key:"fitbodExerciseCount",label:"Exercises",        unit:"",    col:"#8b5cf6"},
+  {key:"fitbodMaxWeightLbs",label:"Max Weight Lifted", unit:"lbs", col:"#ec4899"},
+  // ── Per-muscle group volume
+  {key:"volChest",         label:"Chest Volume",       unit:"lbs", col:"#ef4444"},
+  {key:"volBack",          label:"Back Volume",        unit:"lbs", col:"#f97316"},
+  {key:"volShoulders",     label:"Shoulders Volume",   unit:"lbs", col:"#eab308"},
+  {key:"volBiceps",        label:"Biceps Volume",      unit:"lbs", col:"#22c55e"},
+  {key:"volTriceps",       label:"Triceps Volume",     unit:"lbs", col:"#14b8a6"},
+  {key:"volLegs",          label:"Legs Volume",        unit:"lbs", col:"#3b82f6"},
+  {key:"volCore",          label:"Core Volume",        unit:"lbs", col:"#7c3aed"},
 ];
 
 function summarySparkline(vals, col, h, w) {
@@ -792,6 +824,9 @@ function summaryFmtVal(v, unit) {
   if (unit === "k")    return (v / 1000).toFixed(1) + "k";
   if (unit === "min")  return Math.round(v) + " min";
   if (unit === "mi")   return v.toFixed(1) + " mi";
+  if (unit === "brpm") return v.toFixed(1) + " brpm";
+  if (unit === "L")    return v.toFixed(1) + "L";
+  if (unit === "mg")   return Math.round(v).toLocaleString() + " mg";
   return typeof v === "number" ? v.toFixed(1) : String(v);
 }
 
