@@ -660,8 +660,9 @@ const mapImport = (p) => {
     bmr: p.bmr||p.basalMetabolicRate||p.basalCalories, metabolicAge: p.metabolicAge||p.metabolic_age,
     calories: p.calories||p.dietaryCalories, protein: p.protein,
     carbs: p.carbs||p.carbohydrates, fat: p.fat, fiber: p.fiber, water: p.water,
-    sleepDur: p.sleepDur||p.sleepDuration, deepSleep: p.deepSleep, remSleep: p.remSleep,
-    lightSleep: p.lightSleep, spo2: p.spo2, sleepingWristTemp: p.sleepingWristTemp,
+    sleepDur: p.sleepDur||p.sleepDuration, deepSleep: p.deepSleep||p.sleepDeepMin, remSleep: p.remSleep||p.sleepREMMin,
+    lightSleep: p.lightSleep||p.sleepCoreMin, spo2: p.spo2, sleepingWristTemp: p.sleepingWristTemp,
+    distanceMiles: p.distanceMiles||(p.distanceKm ? +((p.distanceKm)/1.60934).toFixed(2) : null),
     hrRecovery: p.hrRecovery, walkingSteadiness: p.walkingSteadiness,
     respiratoryRate: p.respiratoryRate, flightsClimbed: p.flightsClimbed,
     sugar: p.sugar, cholesterol: p.cholesterol, saturatedFat: p.saturatedFat,
@@ -737,18 +738,25 @@ const SUMMARY_RANGES = [
 ];
 
 const SUMMARY_METRICS = [
-  {key:"weight",     label:"Weight",          unit:"lbs", col:"#60a5fa", lowerBetter:true},
-  {key:"bodyFat",    label:"Body Fat",         unit:"%",   col:"#f87171", lowerBetter:true},
-  {key:"leanMass",   label:"Lean Mass",        unit:"lbs", col:"#4ade80"},
-  {key:"hrv",        label:"HRV",              unit:"ms",  col:"#a78bfa"},
-  {key:"restingHR",  label:"Resting HR",       unit:"bpm", col:"#fb7185", lowerBetter:true},
-  {key:"sleepDur",   label:"Sleep",            unit:"hrs", col:"#818cf8"},
-  {key:"steps",      label:"Steps",            unit:"k",   col:"#34d399"},
-  {key:"calories",   label:"Calories",         unit:"kcal",col:"#fbbf24"},
-  {key:"protein",    label:"Protein",          unit:"g",   col:"#f97316"},
-  {key:"workoutVol", label:"Workout Volume",   unit:"lbs", col:"#e879f9"},
-  {key:"calsBurned", label:"Active Calories",  unit:"kcal",col:"#2dd4bf"},
-  {key:"spo2",       label:"SpO2",             unit:"%",   col:"#67e8f9"},
+  {key:"weight",        label:"Weight",           unit:"lbs", col:"#60a5fa", lowerBetter:true},
+  {key:"bodyFat",       label:"Body Fat",          unit:"%",   col:"#f87171", lowerBetter:true},
+  {key:"fatMass",       label:"Fat Mass",          unit:"lbs", col:"#fb923c", lowerBetter:true},
+  {key:"leanMass",      label:"Lean Mass",         unit:"lbs", col:"#4ade80"},
+  {key:"hrv",           label:"HRV",               unit:"ms",  col:"#a78bfa"},
+  {key:"restingHR",     label:"Resting HR",        unit:"bpm", col:"#fb7185", lowerBetter:true},
+  {key:"vo2max",        label:"VO2 Max",           unit:"",    col:"#22d3ee"},
+  {key:"sleepDur",      label:"Sleep",             unit:"hrs", col:"#818cf8"},
+  {key:"deepSleep",     label:"Deep Sleep",        unit:"min", col:"#6366f1"},
+  {key:"steps",         label:"Steps",             unit:"k",   col:"#34d399"},
+  {key:"distanceMiles", label:"Distance",          unit:"mi",  col:"#86efac"},
+  {key:"calories",      label:"Calories",          unit:"kcal",col:"#fbbf24"},
+  {key:"protein",       label:"Protein",           unit:"g",   col:"#f97316"},
+  {key:"carbs",         label:"Carbs",             unit:"g",   col:"#facc15"},
+  {key:"fat",           label:"Fat",               unit:"g",   col:"#f9a8d4"},
+  {key:"workoutVol",    label:"Workout Volume",    unit:"lbs", col:"#e879f9"},
+  {key:"workoutDur",    label:"Workout Duration",  unit:"min", col:"#c084fc"},
+  {key:"calsBurned",    label:"Active Calories",   unit:"kcal",col:"#2dd4bf"},
+  {key:"spo2",          label:"SpO2",              unit:"%",   col:"#67e8f9"},
 ];
 
 function summarySparkline(vals, col, h, w) {
@@ -774,14 +782,16 @@ function summarySparkline(vals, col, h, w) {
 
 function summaryFmtVal(v, unit) {
   if (v == null) return "—";
-  if (unit === "%")   return v.toFixed(1) + "%";
+  if (unit === "%")    return v.toFixed(1) + "%";
   if (unit === "lbs" || unit === "lb") return v.toFixed(1) + " lbs";
-  if (unit === "hrs") return v.toFixed(1) + "h";
-  if (unit === "ms")  return Math.round(v) + " ms";
-  if (unit === "bpm") return Math.round(v) + " bpm";
-  if (unit === "kcal") return Math.round(v) + " kcal";
-  if (unit === "g")   return Math.round(v) + "g";
-  if (unit === "k")   return (v / 1000).toFixed(1) + "k";
+  if (unit === "hrs")  return v.toFixed(1) + "h";
+  if (unit === "ms")   return Math.round(v) + " ms";
+  if (unit === "bpm")  return Math.round(v) + " bpm";
+  if (unit === "kcal") return Math.round(v).toLocaleString() + " kcal";
+  if (unit === "g")    return Math.round(v) + "g";
+  if (unit === "k")    return (v / 1000).toFixed(1) + "k";
+  if (unit === "min")  return Math.round(v) + " min";
+  if (unit === "mi")   return v.toFixed(1) + " mi";
   return typeof v === "number" ? v.toFixed(1) : String(v);
 }
 
