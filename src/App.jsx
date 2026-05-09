@@ -1789,6 +1789,13 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
   const [humeScanResult, setHumeScanResult] = useState(null);
   const [humeScanError, setHumeScanError] = useState("");
   const [summaryRange, setSummaryRange] = useState("30d");
+  const [summaryOrder, setSummaryOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("bt_summary_order")) || null; } catch { return null; }
+  });
+  useEffect(() => {
+    if (summaryOrder) localStorage.setItem("bt_summary_order", JSON.stringify(summaryOrder));
+  }, [summaryOrder]);
+  const summaryDragRef = useRef(null);
   const [logCoachFilter,setLogCoachFilter]=useState("all");
   const [logTypeFilter,setLogTypeFilter]=useState("all");
   const [expandedEntries,setExpandedEntries]=useState({});
@@ -2150,6 +2157,35 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           const cur=latestVal(m.key), prev=oldestVal(m.key), p=summaryPct(cur,prev);
           return {...m,cur,prev,p};
         }).filter(m=>m.cur!=null);
+
+        // Build ordered metric list — respect saved order, append any new metrics at end
+        const orderedMetrics = (() => {
+          const hasData = SUMMARY_METRICS.filter(m => latestVal(m.key) != null);
+          if (!summaryOrder) return hasData;
+          const saved = summaryOrder.filter(k => hasData.find(m => m.key === k));
+          const unsaved = hasData.filter(m => !saved.includes(m.key)).map(m => m.key);
+          return [...saved, ...unsaved].map(k => hasData.find(m => m.key === k)).filter(Boolean);
+        })();
+
+        const handleDragStart = (e, idx) => {
+          summaryDragRef.current = idx;
+          e.dataTransfer.effectAllowed = "move";
+        };
+        const handleDragOver = (e, idx) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        };
+        const handleDrop = (e, idx) => {
+          e.preventDefault();
+          const from = summaryDragRef.current;
+          if (from === idx || from == null) return;
+          const next = [...orderedMetrics];
+          const [moved] = next.splice(from, 1);
+          next.splice(idx, 0, moved);
+          setSummaryOrder(next.map(m => m.key));
+          summaryDragRef.current = null;
+        };
+        const handleDragEnd = () => { summaryDragRef.current = null; };
         const rl = rangeData2.length ? `${(rangeData2[rangeData2.length-1]?.syncDate||"")} – ${(rangeData2[0]?.syncDate||"")}` : "";
         return (
           <div style={{minHeight:"100vh",background:C.bg}}>
@@ -2157,6 +2193,9 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
                 <span style={{fontSize:"18px",fontWeight:"bold",color:C.text1,letterSpacing:"1px"}}>📈 Summary</span>
                 {rl && <span style={{fontSize:"11px",color:C.dim,background:C.surf,padding:"4px 10px",borderRadius:"4px"}}>{rl}</span>}
+              </div>
+              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+                {summaryOrder && <button onClick={()=>{setSummaryOrder(null);localStorage.removeItem("bt_summary_order");}} style={{padding:"6px 12px",background:"transparent",border:`1px solid ${C.bord2}`,color:C.dim,cursor:"pointer",fontSize:"10px",borderRadius:"4px",letterSpacing:"0.5px"}}>↺ Reset Order</button>}
               </div>
               <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
                 {SUMMARY_RANGES.map(r=>(
@@ -2173,7 +2212,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
             <div style={{display:"flex"}}>
               <div style={{flex:1,padding:"20px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"14px",alignContent:"start"}}>
-                {SUMMARY_METRICS.map(m=>{
+                {orderedMetrics.map((m, idx)=>{
                   const vals=rangeData2.map(d=>d[m.key]).filter(v=>typeof v==="number"&&!isNaN(v));
                   const cur=latestVal(m.key), prev=oldestVal(m.key);
                   const p=summaryPct(cur,prev);
@@ -2181,8 +2220,20 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   const isGood=m.lowerBetter?(pNum!=null&&pNum<0):(pNum!=null&&pNum>0);
                   const isBad=m.lowerBetter?(pNum!=null&&pNum>0):(pNum!=null&&pNum<0);
                   return (
-                    <div key={m.key} style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px"}}>
-                      <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1.5px",fontWeight:"600"}}>{m.label.toUpperCase()}</div>
+                    <div key={m.key}
+                      draggable
+                      onDragStart={e=>handleDragStart(e,idx)}
+                      onDragOver={e=>handleDragOver(e,idx)}
+                      onDrop={e=>handleDrop(e,idx)}
+                      onDragEnd={handleDragEnd}
+                      style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px",cursor:"grab",userSelect:"none",transition:"opacity 0.15s,box-shadow 0.15s"}}
+                      onMouseEnter={e=>{e.currentTarget.style.boxShadow=`0 0 0 1px ${m.col}55`;}}
+                      onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}
+                    >
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1.5px",fontWeight:"600"}}>{m.label.toUpperCase()}</div>
+                        <span style={{fontSize:"12px",color:C.bord2,cursor:"grab",opacity:0.5}}>⠿</span>
+                      </div>
                       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:"8px"}}>
                         <div>
                           <div style={{fontSize:"26px",fontWeight:"bold",color:C.text1,lineHeight:"1.1",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,m.unit)}</div>
