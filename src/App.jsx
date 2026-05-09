@@ -2237,7 +2237,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:"8px"}}>
                         <div>
                           <div style={{fontSize:"26px",fontWeight:"bold",color:C.text1,lineHeight:"1.1",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,m.unit)}</div>
-                          {prev!=null&&cur!=null&&<div style={{fontSize:"11px",color:C.dim,marginTop:"3px"}}>from {summaryFmtVal(prev,m.unit)}</div>}
+                          {prev!=null&&cur!=null&&<div style={{fontSize:"11px",color:C.text2,marginTop:"3px"}}>from {summaryFmtVal(prev,m.unit)}</div>}
                         </div>
                         {pNum!=null&&(
                           <div style={{display:"flex",alignItems:"center",gap:"4px",background:isGood?"#4ade8020":isBad?"#f8717120":"#ffffff10",border:`1px solid ${isGood?"#4ade8040":isBad?"#f8717140":"#ffffff15"}`,borderRadius:"6px",padding:"4px 10px",flexShrink:0}}>
