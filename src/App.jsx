@@ -1627,6 +1627,18 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
   });
   useEffect(()=>{ localStorage.setItem("bt_coach_prompts",JSON.stringify(coachPrompts)); },[coachPrompts]);
 
+  // ── #3 Coach Memory — persistent per-coach knowledge that grows every session ─
+  const [coachMemory,setCoachMemory]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_coach_memory")) || {}; } catch { return {}; }
+  });
+  useEffect(()=>{ localStorage.setItem("bt_coach_memory",JSON.stringify(coachMemory)); },[coachMemory]);
+  const [memoryUpdating,setMemoryUpdating]=useState({});
+  const [showMemory,setShowMemory]=useState({});
+
+  // ── #4 Auto-Brief — auto-generate today's coaching on tab open ─────────────
+  const [autoBrief,setAutoBrief]=useState(()=>localStorage.getItem("bt_auto_brief")!=="false");
+  useEffect(()=>{ localStorage.setItem("bt_auto_brief",autoBrief); },[autoBrief]);
+
   // ── Notification permission state ──────────────────────────────────────────
   const [notifPermission, setNotifPermission] = useState(() =>
     typeof Notification !== "undefined" ? Notification.permission : "default"
@@ -1691,11 +1703,23 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
     return () => clearInterval(interval);
   }, [notifPermission]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── #3 Coach Memory updater — runs silently after each daily response ────────
+  const updateCoachMemory = async (coachId, promptText, response) => {
+    if (!claudeKey) return;
+    setMemoryUpdating(p=>({...p,[coachId]:true}));
+    try {
+      const existing = coachMemory[coachId] || "(no memory yet)";
+      const memPrompt = `You maintain a concise persistent memory for an elite athletic coaching AI.\n\nEXISTING MEMORY:\n${existing}\n\nNEW COACHING EXCHANGE:\nUser prompt: ${promptText.slice(0,600)}\nCoach response: ${response.slice(0,1200)}\n\nUpdate the memory to incorporate new insights. Keep it under 350 words. Structure it as:\n🎯 GOALS: (primary objectives, target metrics)\n📊 KEY PATTERNS: (what's working, what isn't, recurring themes)\n⚙️ PREFERENCES: (training style, dietary needs, scheduling)\n🚧 CONSTRAINTS: (injuries, limitations, lifestyle factors)\n💡 INSIGHTS: (breakthroughs, correlations discovered)\n\nReturn only the updated memory text, no commentary.`;
+      const newMem = await callClaude("You are a precise athletic coaching memory system. Extract and retain only persistent, actionable facts about this athlete. Never include specific daily numbers (those come from live data). Focus on patterns, goals, preferences, and insights.", memPrompt);
+      setCoachMemory(p=>({...p,[coachId]:newMem}));
+    } catch(e){ console.warn("Memory update failed:", e.message); }
+    setMemoryUpdating(p=>({...p,[coachId]:false}));
+  };
+
   const analyze = async (llmId, coachId, questionId) => { // eslint-disable-line no-use-before-define
     const l=LLMS.find(x=>x.id===llmId);
     if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
     const coach = COACHES.find(c=>c.id===coachId);
-    // For daily coaching, use the saved custom prompt (or default) and key by today's date
     let promptText, qKey;
     if(questionId === "daily") {
       promptText = coachPrompts[coachId] || coach.defaultDailyPrompt;
@@ -1708,16 +1732,18 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
       qKey = `${coachId}_${llmId}_${questionId}`;
     }
     setLoading(p=>({...p,[qKey]:true}));
-    const sys = coach.sys;
+    // #3 Inject coach memory into system prompt so every session builds on the last
+    const mem = coachMemory[coachId];
+    const sys = mem
+      ? `${coach.sys}\n\n🧠 PERSISTENT COACH MEMORY (accumulated knowledge about this athlete — use this to personalise every response):\n${mem}`
+      : coach.sys;
     try {
       let res;
-      const todaySnap = ctx(coachId); // today's full snapshot text
-      const histText  = buildHistory(coachId); // 30-day structured text (for non-Claude LLMs)
-      const csv30     = buildCSV30();           // 30-day CSV (attached as document for Claude)
-      // Full prompt for text-based LLMs (no file attachment)
+      const todaySnap = ctx(coachId);
+      const histText  = buildHistory(coachId);
+      const csv30     = buildCSV30();
       const fullPrompt = `${promptText}\n\n${todaySnap}\n\n${histText}`;
       if(llmId==="claude") {
-        // Claude: today's snapshot as text + full 30-day CSV as document attachment
         res=await callClaude(sys,`${promptText}\n\n${todaySnap}`, csv30);
       } else if(llmId==="gpt4") {
         res=await callGPT(sys, fullPrompt, apiKeys.gpt4);
@@ -1733,8 +1759,6 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
         const persistKey = `thread_${coachId}_${llmId}`;
         const now2 = new Date();
         const dateKey2 = `${now2.getFullYear()}-${String(now2.getMonth()+1).padStart(2,"0")}-${String(now2.getDate()).padStart(2,"0")}`;
-        // Store BOTH the prompt (user) and response (assistant) so the thread always
-        // starts with a valid user message — required by all LLM APIs for multi-turn chat
         setChatThreads(p => ({
           ...p,
           [persistKey]: [...(p[persistKey]||[]),
@@ -1742,11 +1766,26 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
             {role:"assistant", content:res,        ts:now2.toISOString(), type:"daily",        date:dateKey2},
           ]
         }));
+        // #3 Update coach memory silently in background after daily response
+        updateCoachMemory(coachId, promptText, res);
       }
     } catch(e){setAnalyses(p=>({...p,[qKey]:`⚠ ${e.message}`}));}
     setLoading(p=>({...p,[qKey]:false}));
   };
-  analyzeRef.current = analyze; // keep ref current so notification auto-run always has latest version
+  analyzeRef.current = analyze;
+
+  // ── #4 Auto-Brief — generate today's coaching automatically when tab opens ──
+  useEffect(() => {
+    if (tab !== "coach" || !autoBrief || !claudeKey) return;
+    const llmId = coachLLMs[activeCoach] || "claude";
+    const now = new Date();
+    const dateKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const dailyKey = `daily_${activeCoach}_${llmId}_${dateKey}`;
+    if (!analyses[dailyKey] && !loading[dailyKey]) {
+      const t = setTimeout(() => analyzeRef.current && analyzeRef.current(llmId, activeCoach, "daily"), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [tab, activeCoach, autoBrief, claudeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getWorkout = async () => {
     setLoading(p=>({...p,workout:true}));
@@ -2536,20 +2575,42 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
         const [showPresets,setShowPresets] = [loading["_showPresets_"+activeCoachObj.id], v=>setLoading(p=>({...p,["_showPresets_"+activeCoachObj.id]:v}))];
         return (
         <div style={{padding:"16px",maxWidth:"1000px",margin:"0 auto"}}>
-          {!claudeKey && (
-            <div style={{...panel,marginBottom:"16px",borderColor:"#cc785c40"}}>
-              {sectionLabel("🔑 ANTHROPIC API KEY — REQUIRED FOR AI COACH")}
-              <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
-                <input type="password" placeholder="sk-ant-..." value={claudeKey}
+          {/* ── #1 API Key onboarding ── */}
+          {!claudeKey ? (
+            <div style={{...panel,marginBottom:"16px",borderColor:"#f59e0b60",background:"#f59e0b08"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}}>
+                <span style={{fontSize:"22px"}}>🔑</span>
+                <div>
+                  <div style={{fontSize:"14px",fontWeight:"bold",color:C.text1}}>Connect Claude to unlock AI coaching</div>
+                  <div style={{fontSize:"11px",color:C.text3,marginTop:"2px"}}>Your Anthropic API key is stored locally — never sent anywhere except Anthropic's servers.</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:"10px",alignItems:"center",marginBottom:"10px"}}>
+                <input type="password" placeholder="sk-ant-api03-..." value={claudeKey}
                   onChange={e=>{setClaudeKey(e.target.value);localStorage.setItem("bt_claude_key",e.target.value);}}
-                  style={{...inp,flex:1}} />
-                <span style={{fontSize:"11px",color:C.text3}}>Get key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#cc785c"}}>console.anthropic.com</a></span>
+                  style={{...inp,flex:1,borderColor:"#f59e0b60"}} />
+                <button onClick={()=>window.open("https://console.anthropic.com/settings/keys","_blank")}
+                  style={{...bFill("#f59e0b"),padding:"8px 14px",fontSize:"11px",whiteSpace:"nowrap"}}>
+                  Get Key →
+                </button>
+              </div>
+              <div style={{display:"flex",gap:"16px",flexWrap:"wrap"}}>
+                {["1. Go to console.anthropic.com/settings/keys","2. Click Create Key","3. Paste it above"].map((s,i)=>(
+                  <div key={i} style={{fontSize:"10px",color:C.text3,display:"flex",alignItems:"center",gap:"4px"}}>
+                    <span style={{color:"#f59e0b"}}>›</span> {s}
+                  </div>
+                ))}
               </div>
             </div>
-          )}
-          {claudeKey && (
-            <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"10px"}}>
-              <span style={{fontSize:"11px",color:"#4ade80"}}>✓ Claude API connected · {COACHES.length} coaches ready</span>
+          ) : (
+            <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",background:"#4ade8010",border:"1px solid #4ade8030",borderRadius:"8px",flexWrap:"wrap",gap:"8px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <span style={{color:"#4ade80",fontSize:"16px"}}>✓</span>
+                <div>
+                  <div style={{fontSize:"12px",color:"#4ade80",fontWeight:"600"}}>Claude API connected</div>
+                  <div style={{fontSize:"10px",color:C.dim}}>{COACHES.length} coaches ready · Memory active · Auto-brief {autoBrief?"on":"off"}</div>
+                </div>
+              </div>
               <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
             </div>
           )}
@@ -2568,6 +2629,25 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               <span style={{fontSize:"10px",color:"#4ade80"}}>🔔 ON</span>
             </div>
           )}
+
+          {/* ── #4 Auto-Brief + #2 iOS status bar ────────────────────────────── */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",padding:"10px 14px",background:C.surf2,border:`1px solid ${C.bord}`,borderRadius:"8px",flexWrap:"wrap",gap:"10px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}}>
+              {/* Auto-brief toggle */}
+              <label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer"}}>
+                <div onClick={()=>setAutoBrief(v=>!v)} style={{width:"36px",height:"20px",borderRadius:"10px",background:autoBrief?"#00ff9d":"#333",position:"relative",transition:"background 0.2s",cursor:"pointer",flexShrink:0}}>
+                  <div style={{position:"absolute",top:"3px",left:autoBrief?"19px":"3px",width:"14px",height:"14px",borderRadius:"50%",background:"#000",transition:"left 0.2s"}}/>
+                </div>
+                <span style={{fontSize:"11px",color:C.text2}}>⚡ Auto-brief on tab open</span>
+              </label>
+              {/* iOS sync status */}
+              <div style={{fontSize:"11px",color:C.dim,display:"flex",alignItems:"center",gap:"6px"}}>
+                <span style={{width:"7px",height:"7px",borderRadius:"50%",background:liveData?"#4ade80":"#666",display:"inline-block"}}/>
+                {liveData ? <span style={{color:"#4ade80"}}>iOS syncing</span> : <span>iOS app not syncing — <a href="https://github.com/goforgoldipo/BioTrackHealth" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>set up →</a></span>}
+              </div>
+            </div>
+            {autoBrief && claudeKey && <span style={{fontSize:"10px",color:C.dim}}>Today's brief auto-generates when you open this tab</span>}
+          </div>
 
           {/* ── Active Coach Panel — chat-first design ── */}
           {(()=>{
@@ -2589,6 +2669,44 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   {thread.length > 0 ? `${thread.filter(m=>m.role==="assistant").length} response${thread.filter(m=>m.role==="assistant").length!==1?"s":""}` : ""}
                 </div>
               </div>
+
+              {/* ── #3 Coach Memory panel ── */}
+              {(()=>{
+                const mem = coachMemory[activeCoachObj.id];
+                const isOpen = showMemory[activeCoachObj.id];
+                const isUpdating = memoryUpdating[activeCoachObj.id];
+                return (
+                  <div style={{marginBottom:"10px",border:`1px solid ${activeCoachObj.col}30`,borderRadius:"8px",overflow:"hidden"}}>
+                    <button onClick={()=>setShowMemory(p=>({...p,[activeCoachObj.id]:!p[activeCoachObj.id]}))}
+                      style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:activeCoachObj.col+"12",border:"none",cursor:"pointer",color:C.text2}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                        <span style={{fontSize:"12px"}}>🧠</span>
+                        <span style={{fontSize:"11px",fontWeight:"600",letterSpacing:"1px"}}>COACH MEMORY</span>
+                        {mem && <span style={{fontSize:"9px",background:activeCoachObj.col+"30",color:activeCoachObj.col,padding:"2px 6px",borderRadius:"4px"}}>ACTIVE</span>}
+                        {isUpdating && <span style={{fontSize:"9px",color:C.dim,animation:"pulse 1s infinite"}}>updating…</span>}
+                      </div>
+                      <span style={{fontSize:"10px",color:C.dim}}>{isOpen?"▲":"▼"}</span>
+                    </button>
+                    {isOpen && (
+                      <div style={{padding:"10px 12px",background:C.surf2}}>
+                        <p style={{fontSize:"10px",color:C.dim,marginBottom:"8px"}}>This memory is automatically updated after every coaching session and injected into every prompt — your coach remembers you across sessions.</p>
+                        <textarea
+                          value={mem||""}
+                          onChange={e=>setCoachMemory(p=>({...p,[activeCoachObj.id]:e.target.value}))}
+                          placeholder="No memory yet — run your first coaching session and memory will be captured automatically…"
+                          rows={8}
+                          style={{width:"100%",background:C.surf,border:`1px solid ${C.bord2}`,borderRadius:"6px",color:C.text1,fontSize:"11px",padding:"10px",resize:"vertical",lineHeight:"1.6",boxSizing:"border-box"}}
+                        />
+                        <div style={{display:"flex",gap:"8px",marginTop:"8px"}}>
+                          <button onClick={()=>setCoachMemory(p=>({...p,[activeCoachObj.id]:""}))}
+                            style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CLEAR MEMORY</button>
+                          <span style={{fontSize:"10px",color:C.dim,alignSelf:"center"}}>Memory updates automatically after each daily brief</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Chat thread — primary UI */}
               <div ref={chatScrollRef} style={{
