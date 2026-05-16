@@ -835,6 +835,20 @@ function summaryPct(cur, old) {
   return ((cur - old) / Math.abs(old) * 100).toFixed(1);
 }
 
+// ─── DAILY HABITS ─────────────────────────────────────────────────────────────
+const DEFAULT_HABITS = [
+  {id:"no_bread",       label:"No Bread",          icon:"🍞", avoid:true},
+  {id:"no_pasta",       label:"No Pasta",           icon:"🍝", avoid:true},
+  {id:"no_chocolate",   label:"No Chocolate",       icon:"🍫", avoid:true},
+  {id:"no_breakfast",   label:"No Breakfast (IF)",  icon:"⏰", avoid:true},
+  {id:"protein_shakes", label:"3 Protein Shakes",   icon:"🥤", avoid:false},
+  {id:"vegetables",     label:"Vegetables",         icon:"🥦", avoid:false},
+  {id:"fruit",          label:"Fruit",              icon:"🍎", avoid:false},
+  {id:"nuts",           label:"Nuts",               icon:"🥜", avoid:false},
+  {id:"beans",          label:"Beans",              icon:"🫘", avoid:false},
+  {id:"no_eating_out",  label:"No Eating Out",      icon:"🍔", avoid:true},
+];
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view,setView]=useState("daily");
@@ -1835,6 +1849,18 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
     if (summaryOrder) localStorage.setItem("bt_summary_order", JSON.stringify(summaryOrder));
   }, [summaryOrder]);
   const summaryDragRef = useRef(null);
+  // ── Daily Habits ──────────────────────────────────────────────────────────
+  const [habitData,setHabitData]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_habit_data")) || {}; } catch { return {}; }
+  });
+  useEffect(()=>{ localStorage.setItem("bt_habit_data",JSON.stringify(habitData)); },[habitData]);
+  const [customHabits,setCustomHabits]=useState(()=>{
+    try { return JSON.parse(localStorage.getItem("bt_custom_habits")) || []; } catch { return []; }
+  });
+  useEffect(()=>{ localStorage.setItem("bt_custom_habits",JSON.stringify(customHabits)); },[customHabits]);
+  const [newHabitDraft,setNewHabitDraft]=useState("");
+  const [habitHistoryDays,setHabitHistoryDays]=useState(30);
+
   const [logCoachFilter,setLogCoachFilter]=useState("all");
   const [logTypeFilter,setLogTypeFilter]=useState("all");
   const [expandedEntries,setExpandedEntries]=useState({});
@@ -1984,7 +2010,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
       {/* ── NAV */}
       <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto"}}>
-        {[["dashboard","📊 DASHBOARD"],["summary","📈 SUMMARY"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
+        {[["dashboard","📊 DASHBOARD"],["summary","📈 SUMMARY"],["habits","✅ HABITS"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
           <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 20px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"2px",whiteSpace:"nowrap",transition:"color 0.15s"}}>
             {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"5px"}}>●</span>}
           </button>
@@ -2563,6 +2589,246 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
         </>
       )}
+
+      {/* ══════════ HABITS TAB ══════════ */}
+      {tab==="habits" && (()=>{
+        const allHabits = [...DEFAULT_HABITS, ...customHabits];
+        const now = new Date();
+        const todayKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+
+        const toggle = (dateKey, habitId) => {
+          setHabitData(p => {
+            const day = p[dateKey] || {};
+            return {...p, [dateKey]: {...day, [habitId]: !day[habitId]}};
+          });
+        };
+
+        const todayData = habitData[todayKey] || {};
+        const todayScore = allHabits.filter(h => todayData[h.id]).length;
+        const todayPct = Math.round((todayScore / allHabits.length) * 100);
+
+        // Build last N days for history
+        const histDays = [];
+        for (let i = 0; i < habitHistoryDays; i++) {
+          const d = new Date(now); d.setDate(d.getDate() - i);
+          const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+          const label = i===0?"Today":i===1?"Yesterday":d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+          histDays.push({key:k, label, d});
+        }
+
+        // Streak per habit
+        const streak = (habitId) => {
+          let s = 0;
+          for (let i = 0; i < 365; i++) {
+            const d = new Date(now); d.setDate(d.getDate() - i);
+            const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+            if (habitData[k]?.[habitId]) s++;
+            else break;
+          }
+          return s;
+        };
+
+        // Overall compliance % per habit over habitHistoryDays
+        const compliance = (habitId) => {
+          const tracked = histDays.filter(d => habitData[d.key] !== undefined);
+          if (!tracked.length) return null;
+          const done = tracked.filter(d => habitData[d.key]?.[habitId]).length;
+          return Math.round((done / tracked.length) * 100);
+        };
+
+        const scoreColor = todayPct >= 80 ? "#4ade80" : todayPct >= 50 ? "#fbbf24" : "#f87171";
+
+        return (
+          <div style={{minHeight:"100vh",background:C.bg,padding:"20px"}}>
+
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"20px",flexWrap:"wrap",gap:"12px"}}>
+              <div>
+                <div style={{fontSize:"20px",fontWeight:"bold",color:C.text1,letterSpacing:"1px"}}>✅ Daily Habits</div>
+                <div style={{fontSize:"11px",color:C.dim,marginTop:"2px"}}>{now.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
+              </div>
+              {/* Today's score ring */}
+              <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                <div style={{textAlign:"center",background:C.surf,border:`2px solid ${scoreColor}`,borderRadius:"50%",width:"72px",height:"72px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                  <div style={{fontSize:"20px",fontWeight:"bold",color:scoreColor}}>{todayScore}</div>
+                  <div style={{fontSize:"9px",color:C.dim}}>/ {allHabits.length}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:"24px",fontWeight:"bold",color:scoreColor}}>{todayPct}%</div>
+                  <div style={{fontSize:"10px",color:C.dim}}>today's score</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:"20px",alignItems:"flex-start",flexWrap:"wrap"}}>
+
+              {/* ── Left: Today's checklist ── */}
+              <div style={{flex:"0 0 340px",minWidth:"280px"}}>
+                <div style={{fontSize:"11px",color:C.text3,letterSpacing:"2px",fontWeight:"600",marginBottom:"10px"}}>TODAY'S CHECKLIST</div>
+                <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+                  {allHabits.map(h => {
+                    const done = !!todayData[h.id];
+                    const s = streak(h.id);
+                    return (
+                      <button key={h.id} onClick={()=>toggle(todayKey, h.id)}
+                        style={{display:"flex",alignItems:"center",gap:"12px",padding:"12px 14px",
+                          background:done?"#4ade8012":C.surf,
+                          border:`1px solid ${done?"#4ade8050":C.bord}`,
+                          borderRadius:"10px",cursor:"pointer",textAlign:"left",transition:"all 0.15s"}}>
+                        {/* Checkbox */}
+                        <div style={{width:"22px",height:"22px",borderRadius:"6px",flexShrink:0,
+                          background:done?"#4ade80":"transparent",
+                          border:`2px solid ${done?"#4ade80":C.bord2}`,
+                          display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
+                          {done && <span style={{color:"#000",fontSize:"13px",fontWeight:"bold"}}>✓</span>}
+                        </div>
+                        {/* Icon + Label */}
+                        <span style={{fontSize:"16px"}}>{h.icon}</span>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:"13px",fontWeight:"600",color:done?C.text1:C.text2,
+                            textDecoration:done&&h.avoid?"none":"none"}}>{h.label}</div>
+                          <div style={{fontSize:"10px",color:C.dim,marginTop:"1px"}}>
+                            {h.avoid ? "avoid" : "do daily"}
+                          </div>
+                        </div>
+                        {/* Streak */}
+                        {s > 0 && (
+                          <div style={{fontSize:"10px",color:"#fbbf24",fontWeight:"bold",textAlign:"right",flexShrink:0}}>
+                            🔥 {s}d
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* Add custom habit */}
+                  <div style={{display:"flex",gap:"8px",marginTop:"6px"}}>
+                    <input value={newHabitDraft} onChange={e=>setNewHabitDraft(e.target.value)}
+                      onKeyDown={e=>{
+                        if(e.key==="Enter"&&newHabitDraft.trim()){
+                          setCustomHabits(p=>[...p,{id:`custom_${Date.now()}`,label:newHabitDraft.trim(),icon:"📌",avoid:false}]);
+                          setNewHabitDraft("");
+                        }
+                      }}
+                      placeholder="+ Add custom habit…"
+                      style={{...inp,flex:1,fontSize:"12px",padding:"8px 12px"}}/>
+                    <button onClick={()=>{
+                      if(!newHabitDraft.trim()) return;
+                      setCustomHabits(p=>[...p,{id:`custom_${Date.now()}`,label:newHabitDraft.trim(),icon:"📌",avoid:false}]);
+                      setNewHabitDraft("");
+                    }} style={{...bFill("#00ff9d"),padding:"8px 14px",fontSize:"11px"}}>ADD</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Right: Stats per habit ── */}
+              <div style={{flex:1,minWidth:"260px"}}>
+                <div style={{fontSize:"11px",color:C.text3,letterSpacing:"2px",fontWeight:"600",marginBottom:"10px"}}>HABIT STATS · LAST {habitHistoryDays} DAYS</div>
+                <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+                  {allHabits.map(h => {
+                    const s = streak(h.id);
+                    const c = compliance(h.id);
+                    const barColor = c == null ? C.bord2 : c>=80?"#4ade80":c>=50?"#fbbf24":"#f87171";
+                    return (
+                      <div key={h.id} style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"8px",padding:"10px 14px"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"6px"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                            <span style={{fontSize:"14px"}}>{h.icon}</span>
+                            <span style={{fontSize:"12px",fontWeight:"600",color:C.text1}}>{h.label}</span>
+                          </div>
+                          <div style={{display:"flex",gap:"12px",alignItems:"center"}}>
+                            {s>0&&<span style={{fontSize:"11px",color:"#fbbf24"}}>🔥 {s} day streak</span>}
+                            <span style={{fontSize:"12px",fontWeight:"bold",color:barColor}}>{c!=null?`${c}%`:"—"}</span>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div style={{height:"4px",background:C.bord,borderRadius:"2px",overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${c||0}%`,background:barColor,borderRadius:"2px",transition:"width 0.4s"}}/>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* ── History grid ── */}
+            <div style={{marginTop:"28px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px",flexWrap:"wrap",gap:"8px"}}>
+                <div style={{fontSize:"11px",color:C.text3,letterSpacing:"2px",fontWeight:"600"}}>HISTORY</div>
+                <div style={{display:"flex",gap:"6px"}}>
+                  {[7,14,30,60].map(d=>(
+                    <button key={d} onClick={()=>setHabitHistoryDays(d)}
+                      style={{padding:"4px 10px",fontSize:"10px",cursor:"pointer",borderRadius:"4px",
+                        background:habitHistoryDays===d?"#00ff9d":"transparent",
+                        border:`1px solid ${habitHistoryDays===d?"#00ff9d":C.bord2}`,
+                        color:habitHistoryDays===d?"#000":C.text2}}>
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{overflowX:"auto"}}>
+                <table style={{borderCollapse:"collapse",minWidth:"100%",fontSize:"11px"}}>
+                  <thead>
+                    <tr>
+                      <th style={{padding:"6px 10px",color:C.text3,textAlign:"left",fontWeight:"600",whiteSpace:"nowrap",borderBottom:`1px solid ${C.bord}`,minWidth:"150px"}}>HABIT</th>
+                      {histDays.map(d=>(
+                        <th key={d.key} style={{padding:"4px 6px",color:d.key===todayKey?"#00ff9d":C.dim,textAlign:"center",fontWeight:d.key===todayKey?"bold":"normal",borderBottom:`1px solid ${C.bord}`,minWidth:"48px",whiteSpace:"nowrap"}}>
+                          {d.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allHabits.map(h=>(
+                      <tr key={h.id} style={{borderBottom:`1px solid ${C.bord}20`}}>
+                        <td style={{padding:"7px 10px",color:C.text2,whiteSpace:"nowrap"}}>
+                          <span style={{marginRight:"6px"}}>{h.icon}</span>{h.label}
+                        </td>
+                        {histDays.map(d=>{
+                          const val = habitData[d.key]?.[h.id];
+                          const logged = habitData[d.key] !== undefined;
+                          return (
+                            <td key={d.key} style={{padding:"4px 6px",textAlign:"center"}}>
+                              <button onClick={()=>toggle(d.key, h.id)}
+                                title={val?"✓ Done — click to uncheck":"Not done — click to check"}
+                                style={{width:"28px",height:"28px",borderRadius:"6px",border:"none",cursor:"pointer",
+                                  background:val?"#4ade8030":logged?"#f8717120":"transparent",
+                                  fontSize:"13px",display:"inline-flex",alignItems:"center",justifyContent:"center",
+                                  transition:"background 0.1s"}}>
+                                {val ? "✅" : logged ? "❌" : <span style={{color:C.bord2}}>·</span>}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {/* Score row */}
+                    <tr style={{borderTop:`1px solid ${C.bord}`}}>
+                      <td style={{padding:"7px 10px",color:C.text3,fontWeight:"600",fontSize:"10px",letterSpacing:"1px"}}>SCORE</td>
+                      {histDays.map(d=>{
+                        const day = habitData[d.key];
+                        if(!day) return <td key={d.key} style={{padding:"4px 6px",textAlign:"center",color:C.bord2}}>·</td>;
+                        const sc = allHabits.filter(h=>day[h.id]).length;
+                        const pct = Math.round(sc/allHabits.length*100);
+                        const col = pct>=80?"#4ade80":pct>=50?"#fbbf24":"#f87171";
+                        return (
+                          <td key={d.key} style={{padding:"4px 6px",textAlign:"center"}}>
+                            <div style={{fontSize:"10px",fontWeight:"bold",color:col}}>{pct}%</div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        );
+      })()}
 
       {/* ══════════ AI COACH TAB ══════════ */}
       {tab==="coach" && (() => {
