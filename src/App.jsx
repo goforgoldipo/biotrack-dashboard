@@ -392,9 +392,51 @@ const getCols = (view, live, history) => {
       };
     });
   }
-  if(view==="weekly") { const weeks=Math.min(Math.max(Math.ceil(all.length/7),1),52); return Array.from({length:weeks},(_,w)=>({label:weekLabel(w),data:aggDays(all.slice(w*7,w*7+7).filter(Boolean))})); }
-  if(view==="monthly") { const months=Math.min(Math.max(Math.ceil(all.length/30),1),120); return Array.from({length:months},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))})); }
-  const years=Math.min(Math.max(Math.ceil(all.length/365),1),20); return Array.from({length:years},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
+  if(view==="weekly") {
+    // Group by actual ISO calendar week (Mon–Sun) so weeks don't shift at month/year boundaries
+    const byWeek = {};
+    all.forEach(d => {
+      const parsed = parseSyncDateRobust(d.syncDate || d.date);
+      if(!parsed) return;
+      // ISO week: shift so Mon=0
+      const dow = (parsed.getDay() + 6) % 7;
+      const mon = new Date(parsed); mon.setDate(parsed.getDate() - dow);
+      const wk = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`;
+      if(!byWeek[wk]) byWeek[wk] = [];
+      byWeek[wk].push(d);
+    });
+    return Object.keys(byWeek).sort().reverse().map(wk => {
+      const d = new Date(wk);
+      const sun = new Date(d); sun.setDate(d.getDate() + 6);
+      const label = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}–${sun.getDate()}`;
+      return {label, data: aggDays(byWeek[wk])};
+    });
+  }
+  if(view==="monthly") {
+    // Group by actual calendar month — never scrambles at month boundaries
+    const byMonth = {};
+    all.forEach(d => {
+      const parsed = parseSyncDateRobust(d.syncDate || d.date);
+      if(!parsed) return;
+      const mk = `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,"0")}`;
+      if(!byMonth[mk]) byMonth[mk] = [];
+      byMonth[mk].push(d);
+    });
+    return Object.keys(byMonth).sort().reverse().map(mk => {
+      const [y, m] = mk.split("-").map(Number);
+      return {label: `${MONTHS_SHORT[m-1]} ${y}`, data: aggDays(byMonth[mk])};
+    });
+  }
+  // Annual — group by actual calendar year
+  const byYear = {};
+  all.forEach(d => {
+    const parsed = parseSyncDateRobust(d.syncDate || d.date);
+    if(!parsed) return;
+    const yr = String(parsed.getFullYear());
+    if(!byYear[yr]) byYear[yr] = [];
+    byYear[yr].push(d);
+  });
+  return Object.keys(byYear).sort().reverse().map(yr => ({label: yr, data: aggDays(byYear[yr])}));
 };
 
 // Find the previous day with the same workout type, starting after startIdx
@@ -2208,7 +2250,9 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       {/* ══════════ SUMMARY TAB ══════════ */}
       {tab==="summary" && (()=>{
         const rdDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:99999;
-        const allDays2 = (liveHistory||[]).map(h=>({...h,isDemo:false}));
+        // Fall back to DEMO data when not connected (same as Dashboard)
+        const histSrc = (liveHistory && liveHistory.length > 0) ? liveHistory : DEMO;
+        const allDays2 = histSrc.map(h=>({...h,isDemo:!liveHistory?.length}));
         const rangeData2 = allDays2.slice(0, Math.min(rdDays, allDays2.length));
         // Use most-recent non-null value for each metric (avoids partial today data like 76 steps at 6am)
         const latestVal = (key) => rangeData2.find(d => d[key] != null && d[key] !== 0)?.[key] ?? null;
