@@ -368,9 +368,10 @@ const getCols = (view, live, history) => {
       byDateKey[todayKey] = { ...(byDateKey[todayKey]||{}), ...live, isDemo:false };
     }
 
-    // Generate 30 consecutive calendar days starting from today
+    // Generate 90 consecutive calendar days starting from today so data
+    // is always visible even after a multi-week gap between syncs
     const todayJs = new Date();
-    return Array.from({length:30},(_,i)=>{
+    return Array.from({length:90},(_,i)=>{
       const date = new Date(todayJs.getFullYear(), todayJs.getMonth(), todayJs.getDate() - i);
       const key = localKey(date);
       // Column 0: always show most recent data available (live), even if stale
@@ -2424,6 +2425,23 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </span>
             )}
           </div>
+
+          {/* Data gap banner — shown when last sync was more than 2 days ago */}
+          {(()=>{
+            if(!liveData?.syncDate) return null;
+            const parsed = parseSyncDateRobust(liveData.syncDate);
+            if(!parsed) return null;
+            const daysAgo = Math.floor((Date.now() - parsed.getTime()) / 86400000);
+            if(daysAgo <= 2) return null;
+            return (
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",background:"#fbbf2412",borderBottom:`1px solid #fbbf2430`,flexWrap:"wrap",gap:"8px"}}>
+                <span style={{fontSize:"11px",color:"#fbbf24"}}>
+                  ⚠ Last sync was <strong>{daysAgo} days ago</strong> ({liveData.syncDate}) — scroll right to see your data, or sync to fill the gap
+                </span>
+                <button onClick={()=>setTab("sync")} style={{padding:"4px 12px",background:"transparent",border:"1px solid #fbbf2460",color:"#fbbf24",cursor:"pointer",fontSize:"10px",borderRadius:"4px"}}>SYNC NOW →</button>
+              </div>
+            );
+          })()}
 
           {/* Table */}
           <div style={{overflowX:"auto"}}>
