@@ -368,13 +368,15 @@ const getCols = (view, live, history) => {
       byDateKey[todayKey] = { ...(byDateKey[todayKey]||{}), ...live, isDemo:false };
     }
 
-    // Generate 90 consecutive calendar days starting from today so data
-    // is always visible even after a multi-week gap between syncs
-    const todayJs = new Date();
+    // When live data is stale (gap > 1 day), start the calendar from the
+    // live data's date so column 0 shows real data immediately — no empty scroll.
+    // When live is from today, start from today as usual.
+    const liveParsed = (live && !liveIsFromToday) ? parseSyncDateRobust(live.syncDate) : null;
+    const startJs = liveParsed || new Date();
+    const isStaleStart = !!liveParsed;
     return Array.from({length:90},(_,i)=>{
-      const date = new Date(todayJs.getFullYear(), todayJs.getMonth(), todayJs.getDate() - i);
+      const date = new Date(startJs.getFullYear(), startJs.getMonth(), startJs.getDate() - i);
       const key = localKey(date);
-      // Column 0: always show most recent data available (live), even if stale
       let d = byDateKey[key] || EMPTY_DAY;
       if(i===0 && live) d = { ...d, ...live, isDemo:false };
       const dow = DOW[date.getDay()];
@@ -383,7 +385,7 @@ const getCols = (view, live, history) => {
       let label;
       if(yr < thisYear) label = `${dow} ${dateStr} ${yr}`;
       else label = `${dow} ${dateStr}`;
-      if(i===0 && live) label = `${label} ●`;
+      if(i===0) label = isStaleStart ? `LATEST (${dateStr}) ●` : (live ? `TODAY ●` : `TODAY`);
       return {
         label,
         data: d,
