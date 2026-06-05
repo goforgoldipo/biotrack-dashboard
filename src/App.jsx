@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, Fragment, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useRef, Fragment, useEffect, useMemo } from "react";
 
 // ─── COLOR SYSTEM ─────────────────────────────────────────────────────────────
 // text1: primary white text
@@ -2166,6 +2166,112 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </div>
             )}
           </div>
+
+          {/* ── Daily Coaching Settings ── */}
+          {(()=>{
+            const [cs,setCs]=React.useState({});
+            const [saving,setSaving]=React.useState(false);
+            const [testing,setTesting]=React.useState(false);
+            const [testResult,setTestResult]=React.useState("");
+            const [loaded,setLoaded]=React.useState(false);
+            React.useEffect(()=>{
+              if(!apiURL||!apiSecret||loaded) return;
+              fetch(`${apiURL}/coaching/settings`,{headers:{"x-api-secret":apiSecret}})
+                .then(r=>r.json()).then(d=>{ setCs(d); setLoaded(true); }).catch(()=>{});
+            },[apiURL,apiSecret]);
+            const save = async () => {
+              setSaving(true); setTestResult("");
+              try {
+                await fetch(`${apiURL}/coaching/settings`,{method:"POST",headers:{"Content-Type":"application/json","x-api-secret":apiSecret},body:JSON.stringify({
+                  anthropicKey: cs.anthropicKey||undefined,
+                  email: cs.email,
+                  resendKey: cs.resendKey||undefined,
+                  ntfyTopic: cs.ntfyTopic,
+                  enabled: cs.enabled!==false,
+                })});
+                setTestResult("✓ Settings saved!");
+                setLoaded(false); // reload
+              } catch(e){ setTestResult("⚠ Save failed: "+e.message); }
+              setSaving(false);
+            };
+            const testNow = async () => {
+              setTesting(true); setTestResult("⟳ Running coaching brief... (takes ~15s)");
+              try {
+                const r = await fetch(`${apiURL}/coaching/run`,{method:"POST",headers:{"x-api-secret":apiSecret}});
+                const j = await r.json();
+                if(j.error) setTestResult("⚠ "+j.error);
+                else setTestResult("✓ Done! Check your email & ntfy app. Brief preview:\n\n"+j.brief?.slice(0,300)+"...");
+              } catch(e){ setTestResult("⚠ "+e.message); }
+              setTesting(false);
+            };
+            const isConfigured = cs.anthropicKeySet && cs.email;
+            return (
+              <div style={{...panel,marginBottom:"16px",borderColor:"#a78bfa40"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
+                  <div>
+                    <div style={{fontSize:"13px",fontWeight:"bold",letterSpacing:"2px",color:"#a78bfa"}}>🧠 DAILY COACHING BRIEF</div>
+                    <div style={{fontSize:"11px",color:C.dim,marginTop:"3px"}}>Claude analyzes your data every morning → email + iPhone push notification</div>
+                  </div>
+                  <label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer"}}>
+                    <div onClick={()=>setCs(p=>({...p,enabled:!p.enabled}))} style={{width:"36px",height:"20px",borderRadius:"10px",background:cs.enabled!==false?"#a78bfa":"#333",position:"relative",transition:"background 0.2s",cursor:"pointer"}}>
+                      <div style={{position:"absolute",top:"3px",left:cs.enabled!==false?"19px":"3px",width:"14px",height:"14px",borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
+                    </div>
+                    <span style={{fontSize:"11px",color:C.text2}}>{cs.enabled!==false?"Enabled":"Disabled"}</span>
+                  </label>
+                </div>
+
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
+                  {/* Anthropic Key */}
+                  <div>
+                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>ANTHROPIC API KEY {cs.anthropicKeySet&&<span style={{color:"#4ade80"}}>✓ SET</span>}</div>
+                    <input type="password" placeholder={cs.anthropicKeyHint||"sk-ant-api03-..."} value={cs.anthropicKey||""}
+                      onChange={e=>setCs(p=>({...p,anthropicKey:e.target.value}))}
+                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Get at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>console.anthropic.com</a></div>
+                  </div>
+                  {/* Email */}
+                  <div>
+                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>COACHING EMAIL</div>
+                    <input type="email" placeholder="brandon@example.com" value={cs.email||""}
+                      onChange={e=>setCs(p=>({...p,email:e.target.value}))}
+                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Where to send your daily brief</div>
+                  </div>
+                  {/* Resend Key */}
+                  <div>
+                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>RESEND API KEY {cs.resendKeySet&&<span style={{color:"#4ade80"}}>✓ SET</span>} <span style={{color:C.dim}}>(free email)</span></div>
+                    <input type="password" placeholder={cs.resendKeySet?"re_...already set":"re_..."} value={cs.resendKey||""}
+                      onChange={e=>setCs(p=>({...p,resendKey:e.target.value}))}
+                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Free at <a href="https://resend.com" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>resend.com</a> — 3k emails/month free</div>
+                  </div>
+                  {/* ntfy Topic */}
+                  <div>
+                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>NTFY PUSH TOPIC <span style={{color:C.dim}}>(iPhone push)</span></div>
+                    <input type="text" placeholder="biotrack-brandon-2026" value={cs.ntfyTopic||""}
+                      onChange={e=>setCs(p=>({...p,ntfyTopic:e.target.value}))}
+                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Free at <a href="https://ntfy.sh" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>ntfy.sh</a> — install app, subscribe to this topic</div>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
+                  <button onClick={save} disabled={saving} style={{...bFill("#a78bfa"),padding:"8px 20px",fontSize:"11px"}}>
+                    {saving?"SAVING...":"💾 SAVE SETTINGS"}
+                  </button>
+                  <button onClick={testNow} disabled={testing||!isConfigured} title={!isConfigured?"Set Anthropic key + email first":""} style={{...bOut("#a78bfa"),padding:"8px 20px",fontSize:"11px",opacity:isConfigured?1:0.4}}>
+                    {testing?"RUNNING...":"▶ TEST BRIEF NOW"}
+                  </button>
+                  <span style={{fontSize:"10px",color:C.dim}}>Runs daily at 7 AM ET · <a href="https://apps.apple.com/app/ntfy/id1625stopping" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>Get ntfy for iPhone →</a></span>
+                </div>
+                {testResult&&(
+                  <div style={{marginTop:"12px",padding:"12px",background:C.surf2,borderRadius:"6px",fontSize:"11px",color:testResult.startsWith("✓")?C.text1:"#f87171",whiteSpace:"pre-wrap",lineHeight:"1.6"}}>
+                    {testResult}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Shortcut guide */}
           {sectionLabel("iOS SHORTCUT SETUP GUIDE — 5 PHASES · ~10 MINUTES")}
