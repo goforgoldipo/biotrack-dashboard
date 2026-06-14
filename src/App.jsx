@@ -297,6 +297,14 @@ const monthLabel = (monthsAgo) => {
 const yearLabel = (yearsAgo) => `${new Date().getFullYear() - yearsAgo}`;
 
 const getCols = (view, live, history) => {
+  try {
+  return _getColsInner(view, live, history);
+  } catch(e) {
+    console.error("[BioTrack] getCols crashed — falling back to empty cols:", e);
+    return [];
+  }
+};
+const _getColsInner = (view, live, history) => {
   const hasReal = live || (history && history.length > 0);
   if(!hasReal) {
     const all = DEMO;
@@ -403,15 +411,21 @@ const getCols = (view, live, history) => {
       if(!parsed) return;
       // ISO week: shift so Mon=0
       const dow = (parsed.getDay() + 6) % 7;
-      const mon = new Date(parsed); mon.setDate(parsed.getDate() - dow);
+      // Use local-time Date constructor to avoid UTC-offset off-by-one
+      const mon = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate() - dow);
       const wk = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`;
       if(!byWeek[wk]) byWeek[wk] = [];
       byWeek[wk].push(d);
     });
     return Object.keys(byWeek).sort().reverse().map(wk => {
-      const d = new Date(wk);
-      const sun = new Date(d); sun.setDate(d.getDate() + 6);
-      const label = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}–${sun.getDate()}`;
+      // Parse week key as local time (not UTC) to avoid off-by-one in US timezones
+      const [wy, wm, wd] = wk.split("-").map(Number);
+      const monDate = new Date(wy, wm - 1, wd);
+      const sunDate = new Date(wy, wm - 1, wd + 6);
+      // Show both month names when week crosses a month boundary
+      const label = monDate.getMonth() === sunDate.getMonth()
+        ? `${MONTHS_SHORT[monDate.getMonth()]} ${monDate.getDate()}–${sunDate.getDate()}`
+        : `${MONTHS_SHORT[monDate.getMonth()]} ${monDate.getDate()} – ${MONTHS_SHORT[sunDate.getMonth()]} ${sunDate.getDate()}`;
       return {label, data: aggDays(byWeek[wk])};
     });
   }
@@ -440,7 +454,7 @@ const getCols = (view, live, history) => {
     byYear[yr].push(d);
   });
   return Object.keys(byYear).sort().reverse().map(yr => ({label: yr, data: aggDays(byYear[yr])}));
-};
+}; // end _getColsInner
 
 // Find the previous day with the same workout type, starting after startIdx
 const findPrevSameWorkout = (workoutType, startIdx, allDays) => {
@@ -666,6 +680,7 @@ const parseSyncDateRobust = (s) => {
   // ISO format: parse as local time to avoid UTC-offset off-by-one
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split("-").map(Number);
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
     return new Date(y, m - 1, d);
   }
   // "Mon Day Year" or "Mon Day, Year" — add comma before year if missing (Safari fix)
@@ -674,8 +689,11 @@ const parseSyncDateRobust = (s) => {
   const withYear = hasYear ? normed : normed + ", " + new Date().getFullYear();
   const p2 = new Date(withYear);
   if (isNaN(p2.getTime())) return null;
-  // If no year was in the original string and parsed date is in the future, roll back
-  if (!hasYear && p2 > new Date(Date.now() + 86400000)) p2.setFullYear(p2.getFullYear() - 1);
+  // If no year was in the original string and parsed date is more than 15 days in the
+  // future, assume it belongs to the previous year (e.g. "Dec 20" parsed on Jan 3).
+  // 15-day buffer avoids misclassifying dates from the same month that are slightly ahead
+  // of today (e.g. "Jun 15" when today is Jun 3 should stay in the current year).
+  if (!hasYear && p2 > new Date(Date.now() + 15 * 86400000)) p2.setFullYear(p2.getFullYear() - 1);
   return p2;
 };
 
