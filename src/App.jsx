@@ -689,11 +689,12 @@ const parseSyncDateRobust = (s) => {
   const withYear = hasYear ? normed : normed + ", " + new Date().getFullYear();
   const p2 = new Date(withYear);
   if (isNaN(p2.getTime())) return null;
-  // If no year was in the original string and parsed date is more than 15 days in the
-  // future, assume it belongs to the previous year (e.g. "Dec 20" parsed on Jan 3).
-  // 15-day buffer avoids misclassifying dates from the same month that are slightly ahead
-  // of today (e.g. "Jun 15" when today is Jun 3 should stay in the current year).
-  if (!hasYear && p2 > new Date(Date.now() + 15 * 86400000)) p2.setFullYear(p2.getFullYear() - 1);
+  // No year in the original string: health data can't be from the future, so if the
+  // inferred date is more than 1 day ahead of today, attribute it to the previous year.
+  // (1-day buffer absorbs end-of-day timezone skew for today's syncs.)
+  // Note: same-calendar-month dates from the previous year (e.g. "Jun 3" when today is
+  // Jun 14) are inherently ambiguous without a year — store dates with year to avoid this.
+  if (!hasYear && p2 > new Date(Date.now() + 86400000)) p2.setFullYear(p2.getFullYear() - 1);
   return p2;
 };
 
@@ -707,11 +708,15 @@ const mapImport = (p) => {
   if (!refDate || isNaN(refDate.getTime())) {
     refDate = p._receivedAt ? new Date(p._receivedAt) : new Date();
   }
+  const _fmtDateWithYear = (d) => {
+    const MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${MO[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
+  };
   const m = {
-    syncDate: p.syncDate||new Date().toLocaleDateString("en-US",{month:"short",day:"numeric"}),
+    syncDate: p.syncDate || _fmtDateWithYear(refDate),
     syncTime: p.syncTime||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),
     dow: p.dow||["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][refDate.getDay()],
-    date: p.date||refDate.toLocaleDateString("en-US",{month:"short",day:"numeric"}),
+    date: p.date || _fmtDateWithYear(refDate),
     steps: p.steps||p.stepCount, calsBurned: p.activeCalories||p.calsBurned||p.totalCaloriesBurned,
     restingHR: p.restingHR||p.restingHeartRate, avgHR: p.avgHR||p.averageHeartRate||p.heartRate,
     vo2max: p.vo2max||p.vo2Max, standHours: p.standHours,
