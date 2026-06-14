@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 
 // ── Change this to whatever password you want ──────────────────────────────
-const APP_PASSWORD = "LamboIPO26";
+const APP_PASSWORD = "lambo";
 const SESSION_KEY  = "bt_auth";
 
 function PasswordGate({ children }) {
