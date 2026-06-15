@@ -903,6 +903,91 @@ function summaryPct(cur, old) {
   return ((cur - old) / Math.abs(old) * 100).toFixed(1);
 }
 
+// ─── MARKDOWN RENDERER ────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // H1
+    if (/^# /.test(line)) {
+      out.push(<div key={i} style={{fontSize:15,fontWeight:"bold",color:"#f0f0f0",margin:"14px 0 6px",letterSpacing:"0.5px"}}>{line.slice(2)}</div>);
+    // H2
+    } else if (/^## /.test(line)) {
+      out.push(<div key={i} style={{fontSize:13,fontWeight:"bold",color:"#c8c8c8",margin:"12px 0 4px",letterSpacing:"0.5px"}}>{line.slice(3)}</div>);
+    // H3
+    } else if (/^### /.test(line)) {
+      out.push(<div key={i} style={{fontSize:12,fontWeight:"bold",color:"#a0a0a0",margin:"10px 0 3px"}}>{line.slice(4)}</div>);
+    // HR
+    } else if (/^---+$/.test(line.trim())) {
+      out.push(<div key={i} style={{borderTop:"1px solid #2a2a3e",margin:"10px 0"}}/>);
+    // Bullet list
+    } else if (/^[-•*] /.test(line)) {
+      out.push(
+        <div key={i} style={{display:"flex",gap:"8px",margin:"2px 0",paddingLeft:4}}>
+          <span style={{color:"#a78bfa",flexShrink:0,marginTop:1}}>▸</span>
+          <span>{inlineMarkdown(line.replace(/^[-•*] /,""))}</span>
+        </div>
+      );
+    // Numbered list
+    } else if (/^\d+\. /.test(line)) {
+      const num = line.match(/^(\d+)\. /)[1];
+      out.push(
+        <div key={i} style={{display:"flex",gap:"8px",margin:"2px 0",paddingLeft:4}}>
+          <span style={{color:"#a78bfa",flexShrink:0,minWidth:16,fontWeight:"bold"}}>{num}.</span>
+          <span>{inlineMarkdown(line.replace(/^\d+\. /,""))}</span>
+        </div>
+      );
+    // Table row
+    } else if (/^\|/.test(line)) {
+      const cells = line.split("|").filter((_,ci)=>ci>0&&ci<line.split("|").length-1).map(c=>c.trim());
+      const isHeader = lines[i+1]&&/^\|[-| ]+\|$/.test(lines[i+1]);
+      if(!/^[-| ]+$/.test(line.replace(/\|/g,"").trim())) {
+        out.push(
+          <div key={i} style={{display:"grid",gridTemplateColumns:`repeat(${cells.length},1fr)`,gap:1,marginBottom:1}}>
+            {cells.map((c,ci)=>(
+              <div key={ci} style={{
+                background:isHeader?"#1a1a2e":"#0e0e18",
+                padding:"5px 10px",fontSize:11,
+                color:isHeader?"#c8c8c8":"#f0f0f0",
+                fontWeight:isHeader?"bold":"normal",
+                border:"1px solid #2a2a3e",
+              }}>{inlineMarkdown(c)}</div>
+            ))}
+          </div>
+        );
+      } else {
+        // skip separator row
+      }
+    // Empty line → spacer
+    } else if (line.trim()==="") {
+      out.push(<div key={i} style={{height:6}}/>);
+    // Regular paragraph
+    } else {
+      out.push(<div key={i} style={{margin:"1px 0",lineHeight:1.8}}>{inlineMarkdown(line)}</div>);
+    }
+    i++;
+  }
+  return <div style={{fontSize:13,color:"#c8c8c8"}}>{out}</div>;
+}
+function inlineMarkdown(text) {
+  // Process inline: **bold**, *italic*, `code`
+  const parts = [];
+  const re = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m[2]) parts.push(<strong key={m.index} style={{color:"#f0f0f0",fontWeight:"bold"}}>{m[2]}</strong>);
+    else if (m[3]) parts.push(<em key={m.index} style={{color:"#e0d0ff"}}>{m[3]}</em>);
+    else if (m[4]) parts.push(<code key={m.index} style={{background:"#1a1a2e",padding:"1px 5px",borderRadius:3,fontSize:11,color:"#a78bfa",fontFamily:"'Courier New',monospace"}}>{m[4]}</code>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : text;
+}
+
 // ─── METRIC DRILL-DOWN PANEL ──────────────────────────────────────────────────
 function MetricDrillDown({ metric, allData, onClose }) {
   const [range, setRange] = useState("30d");
@@ -1595,6 +1680,8 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   },[today,manual,liveData,buildHistory,buildNotesContext]);
 
   const [claudeKey,setClaudeKey]=useState(()=>localStorage.getItem("bt_claude_key")||"");
+  const [changingKey,setChangingKey]=useState(false);
+  const [newKeyDraft,setNewKeyDraft]=useState("");
   // Generate a complete CSV of all 30-day data — every field, every source.
   // Used as a document attachment for Claude and embedded as text for other LLMs.
   const buildCSV30 = useCallback(() => {
@@ -1803,24 +1890,57 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   };
 
   // ── Chat thread state ─────────────────────────────────────────────────────
-  // Threads keyed by `thread_${coachId}_${llmId}` — one persistent thread per coach/LLM
   const [chatThreads,setChatThreads]=useState(()=>{
     try{return JSON.parse(localStorage.getItem("bt_chat_threads"))||{};}catch{return {};}
   });
   useEffect(()=>{localStorage.setItem("bt_chat_threads",JSON.stringify(chatThreads));},[chatThreads]);
-  const [chatDraft,setChatDraft]=useState({});    // { [coachId]: string }
-  const [chatLoading,setChatLoading]=useState({}); // { [threadKey]: bool }
-  const chatScrollRef = useRef(null); // auto-scroll to bottom on new messages
+  const [chatDraft,setChatDraft]=useState({});
+  const [chatLoading,setChatLoading]=useState({});
+  const [streamText,setStreamText]=useState({}); // { [threadKey]: string } — live streaming content
+  const chatScrollRef = useRef(null);
 
-  // Auto-scroll chat to bottom whenever thread or loading changes
   useEffect(()=>{
-    if(chatScrollRef.current){
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  },[chatThreads,chatLoading]);
+    if(chatScrollRef.current) chatScrollRef.current.scrollTop=chatScrollRef.current.scrollHeight;
+  },[chatThreads,chatLoading,streamText]);
 
-  const sendChat = async (coachId, llmId) => {
-    const msg=(chatDraft[coachId]||"").trim(); if(!msg) return;
+  // ── Streaming Claude call ─────────────────────────────────────────────────
+  const callClaudeStream = async (sys, messages, onChunk) => {
+    const key = claudeKey;
+    if(!key) throw new Error("Enter your Anthropic API key to use Claude");
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,stream:true,system:sys,
+        messages:messages.map(m=>({role:m.role,content:m.content}))})
+    });
+    if(!r.ok){const j=await r.json();throw new Error(j.error?.message||"API error");}
+    const reader=r.body.getReader();
+    const dec=new TextDecoder();
+    let buf="",full="";
+    while(true){
+      const{done,value}=await reader.read();
+      if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split("\n");
+      buf=lines.pop()||"";
+      for(const line of lines){
+        if(!line.startsWith("data: ")) continue;
+        const data=line.slice(6).trim();
+        if(data==="[DONE]") continue;
+        try{
+          const ev=JSON.parse(data);
+          if(ev.type==="content_block_delta"&&ev.delta?.type==="text_delta"){
+            full+=ev.delta.text;
+            onChunk(full);
+          }
+        }catch{}
+      }
+    }
+    return full;
+  };
+
+  const sendChat = async (coachId, llmId, directMsg) => {
+    const msg=(directMsg||(chatDraft[coachId]||"")).trim(); if(!msg) return;
     const l=LLMS.find(x=>x.id===llmId);
     if(!l.native&&!apiKeys[llmId]){setKeyModal(llmId);return;}
     const coach=COACHES.find(c=>c.id===coachId);
@@ -1829,33 +1949,34 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const threadKey=`thread_${coachId}_${llmId}`;
     const existingThread=chatThreads[threadKey]||[];
 
-    // Add user message immediately (optimistic)
     const userMsg={role:"user",content:msg,ts:now.toISOString(),type:"qa"};
     const newThread=[...existingThread,userMsg];
     setChatThreads(p=>({...p,[threadKey]:newThread}));
     setChatDraft(p=>({...p,[coachId]:""}));
     setChatLoading(p=>({...p,[threadKey]:true}));
+    setStreamText(p=>({...p,[threadKey]:""}));
 
     try {
-      // Always inject fresh 30-day data into the system prompt — coach has full context on every turn
       const todaySnap=ctx(coachId);
       const sysWithData=`${coach.sys}\n\n━━ CLIENT DATA SNAPSHOT (refreshed ${dateKey}) ━━\n${todaySnap}`;
-
-      // Build conversation from existing thread — thread always starts with user role
-      // (analyze() now stores both prompt + response, so thread is always valid)
-      const historyMsgs = existingThread.map(m=>({role:m.role,content:m.content}));
-      const conversationMsgs = [...historyMsgs, {role:"user",content:msg}];
+      const historyMsgs=existingThread.map(m=>({role:m.role,content:m.content}));
+      const conversationMsgs=[...historyMsgs,{role:"user",content:msg}];
 
       let res;
-      if(llmId==="claude")       res=await callClaudeChat(sysWithData, conversationMsgs);
-      else if(llmId==="gpt4")    res=await callGPTChat(sysWithData, conversationMsgs, apiKeys.gpt4);
-      else if(llmId==="grok")    res=await callGrokChat(sysWithData, conversationMsgs, apiKeys.grok);
-      else if(llmId==="gemini")  res=await callGeminiChat(sysWithData, conversationMsgs, apiKeys.gemini);
+      if(llmId==="claude"){
+        res=await callClaudeStream(sysWithData,conversationMsgs,(chunk)=>{
+          setStreamText(p=>({...p,[threadKey]:chunk}));
+        });
+        setStreamText(p=>({...p,[threadKey]:""}));
+      } else if(llmId==="gpt4")   res=await callGPTChat(sysWithData,conversationMsgs,apiKeys.gpt4);
+      else if(llmId==="grok")     res=await callGrokChat(sysWithData,conversationMsgs,apiKeys.grok);
+      else if(llmId==="gemini")   res=await callGeminiChat(sysWithData,conversationMsgs,apiKeys.gemini);
       else throw new Error(`Unknown LLM: ${llmId}`);
 
       const assistantMsg={role:"assistant",content:res,ts:new Date().toISOString(),type:"qa"};
       setChatThreads(p=>({...p,[threadKey]:[...newThread,assistantMsg]}));
     } catch(e) {
+      setStreamText(p=>({...p,[threadKey]:""}));
       const errMsg={role:"assistant",content:`⚠ ${e.message}`,ts:new Date().toISOString(),type:"qa"};
       setChatThreads(p=>({...p,[threadKey]:[...newThread,errMsg]}));
     }
@@ -3338,6 +3459,20 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 ))}
               </div>
             </div>
+          ) : changingKey ? (
+            <div style={{marginBottom:"12px",padding:"10px 14px",background:"#f59e0b08",border:"1px solid #f59e0b40",borderRadius:"8px",display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+              <input type="password" autoFocus placeholder="Paste new API key…" value={newKeyDraft}
+                onChange={e=>setNewKeyDraft(e.target.value)}
+                onKeyDown={e=>{
+                  if(e.key==="Enter"&&newKeyDraft.trim()){setClaudeKey(newKeyDraft.trim());localStorage.setItem("bt_claude_key",newKeyDraft.trim());setChangingKey(false);setNewKeyDraft("");}
+                  if(e.key==="Escape"){setChangingKey(false);setNewKeyDraft("");}
+                }}
+                style={{...inp,flex:1,minWidth:200,borderColor:"#f59e0b60"}}/>
+              <button onClick={()=>{if(newKeyDraft.trim()){setClaudeKey(newKeyDraft.trim());localStorage.setItem("bt_claude_key",newKeyDraft.trim());setChangingKey(false);setNewKeyDraft("");}}}
+                style={{...bFill("#f59e0b"),padding:"6px 14px",fontSize:"11px"}}>SAVE</button>
+              <button onClick={()=>{setChangingKey(false);setNewKeyDraft("");}}
+                style={{...bOut(C.dim),padding:"6px 10px",fontSize:"11px"}}>CANCEL</button>
+            </div>
           ) : (
             <div style={{marginBottom:"12px",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",background:"#4ade8010",border:"1px solid #4ade8030",borderRadius:"8px",flexWrap:"wrap",gap:"8px"}}>
               <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
@@ -3347,7 +3482,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   <div style={{fontSize:"10px",color:C.dim}}>{COACHES.length} coaches ready · Memory active · Auto-brief {autoBrief?"on":"off"}</div>
                 </div>
               </div>
-              <button onClick={()=>{setClaudeKey("");localStorage.removeItem("bt_claude_key");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
+              <button onClick={()=>{setChangingKey(true);setNewKeyDraft("");}} style={{...bOut(C.dim),padding:"4px 10px",fontSize:"9px"}}>CHANGE KEY</button>
             </div>
           )}
 
@@ -3520,15 +3655,16 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                           border:`1px solid ${isUser?"#ffffff15":activeCoachObj.col+(isDaily?"50":"35")}`,
                           borderLeft:isUser?undefined:`3px solid ${activeCoachObj.col}`,
                           borderRadius:"4px",padding:"10px 14px",
-                          fontSize:"13px",lineHeight:"1.8",whiteSpace:"pre-wrap",
+                          fontSize:"13px",lineHeight:"1.8",
                           color:isUser?C.text2:C.text1,
+                          whiteSpace:isUser?"pre-wrap":undefined,
                         }}>
                           {!isUser && (
                             <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>
                               {activeCoachObj.icon} {activeCoachObj.name}
                             </div>
                           )}
-                          {msg.content}
+                          {isUser ? msg.content : renderMarkdown(msg.content)}
                         </div>
                         <div style={{fontSize:"9px",color:C.dim,marginTop:"3px",paddingLeft:"3px",paddingRight:"3px"}}>
                           {isUser?"You":"Coach"} · {msg.ts?new Date(msg.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}):""}
@@ -3537,17 +3673,41 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     );
                   })
                 )}
+                {!isWaiting && thread.length>0 && thread[thread.length-1].role==="assistant" && (
+                  <div style={{display:"flex",flexWrap:"wrap",gap:"6px",paddingLeft:"4px",marginTop:"-4px"}}>
+                    {activeCoachObj.questions.slice(0,3).map(q=>(
+                      <button key={q.id}
+                        onClick={()=>sendChat(activeCoachObj.id,activeLLM,q.prompt)}
+                        style={{
+                          background:"transparent",border:`1px solid ${activeCoachObj.col}35`,
+                          color:activeCoachObj.col,borderRadius:"20px",
+                          padding:"5px 12px",fontSize:"10px",cursor:"pointer",
+                          letterSpacing:"0.3px",transition:"background 0.15s",
+                          fontFamily:"'Courier New',monospace",
+                        }}>
+                        {q.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {isWaiting && (
                   <div style={{display:"flex",alignItems:"flex-start"}}>
-                    <div style={{background:activeCoachObj.col+"12",border:`1px solid ${activeCoachObj.col}40`,borderLeft:`3px solid ${activeCoachObj.col}`,borderRadius:"4px",padding:"10px 14px"}}>
+                    <div style={{maxWidth:"90%",background:activeCoachObj.col+"12",border:`1px solid ${activeCoachObj.col}40`,borderLeft:`3px solid ${activeCoachObj.col}`,borderRadius:"4px",padding:"10px 14px"}}>
                       <div style={{fontSize:"9px",color:activeCoachObj.col,fontWeight:"bold",letterSpacing:"1.5px",marginBottom:"6px"}}>{activeCoachObj.icon} {activeCoachObj.name}</div>
-                      <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
-                        {[0,1,2].map(j=>(
-                          <div key={j} style={{width:"6px",height:"6px",borderRadius:"50%",background:activeCoachObj.col,
-                            animation:`pulse 1.2s ease-in-out ${j*0.2}s infinite`,opacity:0.7}}/>
-                        ))}
-                        <span style={{fontSize:"11px",color:C.text3,marginLeft:"6px"}}>thinking...</span>
-                      </div>
+                      {streamText[threadKey] ? (
+                        <div style={{fontSize:"13px",lineHeight:"1.8",color:C.text1}}>
+                          {renderMarkdown(streamText[threadKey])}
+                          <span style={{display:"inline-block",width:"8px",height:"14px",background:activeCoachObj.col,marginLeft:"2px",verticalAlign:"text-bottom",animation:"pulse 0.8s ease-in-out infinite",opacity:0.9,borderRadius:"1px"}}/>
+                        </div>
+                      ) : (
+                        <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
+                          {[0,1,2].map(j=>(
+                            <div key={j} style={{width:"6px",height:"6px",borderRadius:"50%",background:activeCoachObj.col,
+                              animation:`pulse 1.2s ease-in-out ${j*0.2}s infinite`,opacity:0.7}}/>
+                          ))}
+                          <span style={{fontSize:"11px",color:C.text3,marginLeft:"6px"}}>thinking...</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
