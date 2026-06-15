@@ -1734,7 +1734,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       userContent = prompt;
     }
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,messages:[{role:"user",content:userContent}]})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.content[0].text;
   };
@@ -1772,7 +1772,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const key = claudeKey;
     if(!key) throw new Error("Enter your Anthropic API key to use Claude");
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
-      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-dangerous-direct-browser-access":"true"},
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
       body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,
         messages:messages.map(m=>({role:m.role,content:m.content}))})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
@@ -2170,7 +2170,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
     try {
       const imgs=photos.map(p=>({type:"image",source:{type:"base64",media_type:p.mime,data:p.base64}}));
       if(!claudeKey) throw new Error("Enter your Anthropic API key in the AI Coach tab");
-      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":claudeKey,"anthropic-dangerous-direct-browser-access":"true"},
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":claudeKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
           messages:[{role:"user",content:[...imgs,{type:"text",text:`Analyze body composition. BF ${today.bodyFat}%, Weight ${today.weight}lbs. Assess fat distribution, muscle development, target areas, give 3 specific adjustments.`}]}]})});
       const j=await r.json(); if(j.error)throw new Error(j.error.message);
