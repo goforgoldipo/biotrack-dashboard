@@ -903,6 +903,280 @@ function summaryPct(cur, old) {
   return ((cur - old) / Math.abs(old) * 100).toFixed(1);
 }
 
+// ─── METRIC DRILL-DOWN PANEL ──────────────────────────────────────────────────
+function MetricDrillDown({ metric, allData, onClose }) {
+  const [range, setRange] = useState("30d");
+  const [hovIdx, setHovIdx] = useState(null);
+
+  const days = range==="7d"?7:range==="30d"?30:range==="90d"?90:range==="180d"?180:range==="365d"?365:99999;
+  const rangeSlice = allData.slice(0, Math.min(days, allData.length));
+  const plotData = [...rangeSlice]
+    .map(d => ({ date: d.syncDate || d.date, val: d[metric.key] }))
+    .filter(d => typeof d.val === "number" && !isNaN(d.val))
+    .reverse(); // oldest first for chart
+
+  const vals = plotData.map(d => d.val);
+  const cur  = vals.length ? vals[vals.length - 1] : null;
+  const avg  = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  const best = vals.length ? (metric.lowerBetter ? Math.min(...vals) : Math.max(...vals)) : null;
+  const worst= vals.length ? (metric.lowerBetter ? Math.max(...vals) : Math.min(...vals)) : null;
+  const startVal = vals.length > 1 ? vals[0] : null;
+  const pct  = cur!=null&&startVal!=null&&startVal!==0 ? ((cur-startVal)/Math.abs(startVal)*100) : null;
+  const isGood = pct!=null&&(metric.lowerBetter?pct<0:pct>0);
+  const isBad  = pct!=null&&(metric.lowerBetter?pct>0:pct<0);
+
+  // Historical comparison points
+  const compAt = (d) => allData[Math.min(d-1,allData.length-1)]?.[metric.key] ?? null;
+  const comps = [{label:"1 week ago",d:7},{label:"1 month ago",d:30},{label:"3 months ago",d:90},{label:"6 months ago",d:180},{label:"1 year ago",d:365}]
+    .map(c=>({...c,val:compAt(c.d)})).filter(c=>c.val!=null);
+
+  // Pearson correlation vs other metrics (90d window)
+  const CORR_KEYS = ["hrv","sleepDur","protein","calories","steps","restingHR","bodyFat","weight","leanMass","deepSleep","workoutVol","readiness"];
+  const correlations = CORR_KEYS.filter(k=>k!==metric.key).map(k=>{
+    const pairs = allData.slice(0,90).filter(d=>d[metric.key]!=null&&d[k]!=null).map(d=>[d[metric.key],d[k]]);
+    if(pairs.length<6) return null;
+    const xs=pairs.map(p=>p[0]),ys=pairs.map(p=>p[1]);
+    const mx=xs.reduce((a,b)=>a+b)/xs.length, my=ys.reduce((a,b)=>a+b)/ys.length;
+    const num=pairs.reduce((s,[x,y])=>s+(x-mx)*(y-my),0);
+    const den=Math.sqrt(xs.reduce((s,x)=>s+(x-mx)**2,0)*ys.reduce((s,y)=>s+(y-my)**2,0));
+    return den?{key:k,r:num/den}:null;
+  }).filter(Boolean).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r)).slice(0,3);
+
+  // Chart geometry
+  const W=520, H=140;
+  const mn=vals.length?Math.min(...vals):0, mx2=vals.length?Math.max(...vals):1;
+  const rng2=mx2-mn||1;
+  const toX=i=>(i/Math.max(plotData.length-1,1))*W;
+  const toY=v=>H-10-((v-mn)/rng2)*(H-24);
+  const linePts=plotData.map((d,i)=>`${toX(i).toFixed(1)},${toY(d.val).toFixed(1)}`).join(" ");
+  const areaPath=plotData.length>1
+    ?`M${toX(0).toFixed(1)},${H} `+plotData.map((d,i)=>`L${toX(i).toFixed(1)},${toY(d.val).toFixed(1)}`).join(" ")+` L${toX(plotData.length-1).toFixed(1)},${H} Z`
+    :"";
+
+  // Goal definitions for specific metrics
+  const GOALS = {bodyFat:{target:10,label:"Goal: 10% Body Fat"}};
+  const goal = GOALS[metric.key];
+
+  const keyLabel = k => SUMMARY_METRICS.find(m=>m.key===k)?.label || k;
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:2000,display:"flex"}} onClick={onClose}>
+      {/* Dim backdrop */}
+      <div style={{flex:1,background:"rgba(0,0,0,0.55)"}}/>
+      {/* Panel */}
+      <div
+        onClick={e=>e.stopPropagation()}
+        style={{
+          width:580,maxWidth:"96vw",background:"#08080f",
+          borderLeft:"1px solid #1e1e2e",overflow:"auto",
+          display:"flex",flexDirection:"column",
+          animation:"ddSlideIn 0.22s cubic-bezier(0.16,1,0.3,1)",
+        }}
+      >
+        {/* Header */}
+        <div style={{padding:"18px 24px",borderBottom:"1px solid #1e1e2e",background:"#06060c",position:"sticky",top:0,zIndex:1,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{fontSize:10,color:"#606080",letterSpacing:"2.5px",marginBottom:6,fontWeight:600}}>{metric.label.toUpperCase()}</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:14}}>
+              <div style={{fontSize:34,fontWeight:"bold",color:metric.col,fontFamily:"'Courier New',monospace",lineHeight:1}}>
+                {summaryFmtVal(cur,metric.unit)}
+              </div>
+              {pct!=null&&(
+                <div style={{fontSize:14,fontWeight:"bold",color:isGood?"#4ade80":isBad?"#f87171":"#a0a0a0"}}>
+                  {isGood?"↑":isBad?"↓":"→"} {Math.abs(pct).toFixed(1)}%
+                </div>
+              )}
+            </div>
+            {startVal!=null&&cur!=null&&<div style={{fontSize:11,color:"#606080",marginTop:4}}>from {summaryFmtVal(startVal,metric.unit)} over selected range</div>}
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"1px solid #2a2a3e",color:"#606080",cursor:"pointer",fontSize:18,padding:"4px 12px",borderRadius:6,lineHeight:1,flexShrink:0}}>✕</button>
+        </div>
+
+        <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:22}}>
+
+          {/* Range toggle */}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {[["7d","7D"],["30d","30D"],["90d","90D"],["180d","6M"],["365d","1Y"],["all","ALL"]].map(([id,lbl])=>(
+              <button key={id} onClick={()=>setRange(id)} style={{
+                padding:"5px 13px",fontSize:10,borderRadius:4,cursor:"pointer",fontFamily:"'Courier New',monospace",letterSpacing:"1px",
+                background:range===id?metric.col:"transparent",
+                border:`1px solid ${range===id?metric.col:"#2a2a3e"}`,
+                color:range===id?"#000":"#a0a0a0",
+                fontWeight:range===id?"bold":"normal",
+              }}>{lbl}</button>
+            ))}
+          </div>
+
+          {/* Chart */}
+          {plotData.length>1&&(
+            <div style={{background:"#0e0e18",borderRadius:10,padding:"14px 10px 8px",border:"1px solid #1e1e2e",position:"relative"}}>
+              <svg
+                width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+                style={{display:"block",cursor:"crosshair"}}
+                onMouseLeave={()=>setHovIdx(null)}
+                onMouseMove={e=>{
+                  const rect=e.currentTarget.getBoundingClientRect();
+                  const idx=Math.round(((e.clientX-rect.left)/rect.width)*(plotData.length-1));
+                  setHovIdx(Math.max(0,Math.min(plotData.length-1,idx)));
+                }}
+              >
+                <defs>
+                  <linearGradient id={`ddGrad_${metric.key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={metric.col} stopOpacity="0.18"/>
+                    <stop offset="100%" stopColor={metric.col} stopOpacity="0"/>
+                  </linearGradient>
+                </defs>
+                {areaPath&&<path d={areaPath} fill={`url(#ddGrad_${metric.key})`}/>}
+                <polyline points={linePts} fill="none" stroke={metric.col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+                {hovIdx!=null&&plotData[hovIdx]&&(
+                  <>
+                    <line x1={toX(hovIdx)} y1={0} x2={toX(hovIdx)} y2={H} stroke={metric.col} strokeWidth="1" strokeDasharray="3,3" opacity="0.45"/>
+                    <circle cx={toX(hovIdx)} cy={toY(plotData[hovIdx].val)} r={5} fill={metric.col} stroke="#08080f" strokeWidth="2"/>
+                  </>
+                )}
+                <text x={2} y={H-1} fontSize={8} fill="#404060">{summaryFmtVal(mn,metric.unit)}</text>
+                <text x={W-2} y={H-1} fontSize={8} fill="#404060" textAnchor="end">{summaryFmtVal(mx2,metric.unit)}</text>
+              </svg>
+              {/* Tooltip */}
+              {hovIdx!=null&&plotData[hovIdx]&&(
+                <div style={{position:"absolute",top:8,left:14,background:"#12122a",border:`1px solid ${metric.col}50`,borderRadius:7,padding:"7px 14px",fontSize:11,color:"#f0f0f0",pointerEvents:"none",minWidth:100}}>
+                  <div style={{color:"#606080",marginBottom:3,fontSize:10}}>{plotData[hovIdx].date}</div>
+                  <div style={{fontWeight:"bold",color:metric.col,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(plotData[hovIdx].val,metric.unit)}</div>
+                </div>
+              )}
+            </div>
+          )}
+          {plotData.length<=1&&<div style={{background:"#0e0e18",borderRadius:10,padding:24,border:"1px solid #1e1e2e",textAlign:"center",color:"#404060",fontSize:11}}>Not enough data for this range</div>}
+
+          {/* Stats row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+            {[
+              {label:"CURRENT",val:summaryFmtVal(cur,metric.unit)},
+              {label:"AVG",val:summaryFmtVal(avg!=null?+avg.toFixed(2):null,metric.unit)},
+              {label:metric.lowerBetter?"BEST ↓":"BEST ↑",val:summaryFmtVal(best,metric.unit)},
+              {label:metric.lowerBetter?"WORST ↑":"WORST ↓",val:summaryFmtVal(worst,metric.unit)},
+            ].map(s=>(
+              <div key={s.label} style={{background:"#0e0e18",borderRadius:8,padding:"12px 10px",border:"1px solid #1e1e2e",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#505070",letterSpacing:"1.5px",marginBottom:6,fontWeight:600}}>{s.label}</div>
+                <div style={{fontSize:14,fontWeight:"bold",color:C.text1,fontFamily:"'Courier New',monospace"}}>{s.val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Historical comparisons */}
+          {comps.length>0&&(
+            <div>
+              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>VS PAST</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {comps.map(c=>{
+                  const diff=cur!=null?cur-c.val:null;
+                  const dp=diff!=null&&c.val!==0?(diff/Math.abs(c.val)*100):null;
+                  const good=dp!=null&&(metric.lowerBetter?dp<0:dp>0);
+                  const bad =dp!=null&&(metric.lowerBetter?dp>0:dp<0);
+                  return (
+                    <div key={c.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0e0e18",borderRadius:6,padding:"10px 14px",border:"1px solid #1a1a2e"}}>
+                      <div style={{fontSize:11,color:"#909090"}}>{c.label}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        <div style={{fontSize:11,color:"#505070",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(c.val,metric.unit)}</div>
+                        {dp!=null&&<div style={{fontSize:12,fontWeight:"bold",color:good?"#4ade80":bad?"#f87171":"#a0a0a0",minWidth:52,textAlign:"right"}}>{good?"↑":bad?"↓":"→"} {Math.abs(dp).toFixed(1)}%</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Goal tracker */}
+          {goal&&cur!=null&&(
+            <div>
+              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>GOAL PROGRESS</div>
+              <div style={{background:"#0e0e18",borderRadius:8,padding:"14px",border:"1px solid #1e1e2e"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                  <span style={{fontSize:11,color:"#a0a0a0"}}>{goal.label}</span>
+                  <span style={{fontSize:11,color:metric.col,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,metric.unit)} → {summaryFmtVal(goal.target,metric.unit)}</span>
+                </div>
+                <div style={{background:"#1a1a2e",borderRadius:4,height:8,overflow:"hidden"}}>
+                  {(()=>{
+                    const start=allData[allData.length-1]?.[metric.key]??cur;
+                    const totalDrop=start-goal.target;
+                    const doneDrop=start-cur;
+                    const pctDone=totalDrop>0?Math.min(100,Math.max(0,(doneDrop/totalDrop)*100)):0;
+                    return <div style={{height:"100%",background:metric.col,borderRadius:4,width:`${pctDone}%`,transition:"width 0.5s ease"}}/>;
+                  })()}
+                </div>
+                {metric.lowerBetter&&cur>goal.target&&allData.length>7&&(()=>{
+                  const recent7=allData.slice(0,7).filter(d=>d[metric.key]!=null);
+                  const rate=recent7.length>1?(recent7[0][metric.key]-recent7[recent7.length-1][metric.key])/recent7.length:0;
+                  const weeks=rate>0?Math.ceil((cur-goal.target)/(rate*7)):null;
+                  return <div style={{fontSize:10,color:"#505070",marginTop:8}}>{(cur-goal.target).toFixed(1)}{metric.unit} to go{weeks?` · ~${weeks} weeks at current pace`:""}</div>;
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Correlations */}
+          {correlations.length>0&&(
+            <div>
+              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>WHAT MOVES WITH THIS</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {correlations.map(c=>{
+                  const strong=Math.abs(c.r)>0.55;
+                  const pos=c.r>0;
+                  const insight=metric.lowerBetter
+                    ?(pos?`Higher ${keyLabel(c.key)} → higher ${metric.label} (worse)`:`Higher ${keyLabel(c.key)} → lower ${metric.label} (better)`)
+                    :(pos?`Higher ${keyLabel(c.key)} → higher ${metric.label} (better)`:`Higher ${keyLabel(c.key)} → lower ${metric.label}`);
+                  return (
+                    <div key={c.key} style={{background:"#0e0e18",borderRadius:6,padding:"10px 14px",border:"1px solid #1a1a2e"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <div style={{fontSize:12,color:C.text2,fontWeight:600}}>{keyLabel(c.key)}</div>
+                        <div style={{fontSize:11,fontWeight:"bold",color:strong?"#a78bfa":"#505070",background:strong?"#a78bfa18":"transparent",padding:"2px 8px",borderRadius:4}}>
+                          r = {c.r.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{fontSize:10,color:"#505070"}}>{insight}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Day-by-day table */}
+          {plotData.length>0&&(
+            <div>
+              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>RECENT DATA</div>
+              <div style={{background:"#0e0e18",borderRadius:8,border:"1px solid #1e1e2e",overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #1a1a2e",background:"#06060c"}}>
+                  {["DATE","VALUE","CHANGE"].map(h=>(
+                    <div key={h} style={{fontSize:9,color:"#505070",letterSpacing:"1.5px",fontWeight:600}}>{h}</div>
+                  ))}
+                </div>
+                {[...plotData].reverse().slice(0,20).map((d,i,arr)=>{
+                  const prev2=arr[i+1]?.val??null;
+                  const chg=prev2!=null?d.val-prev2:null;
+                  const g2=chg!=null&&(metric.lowerBetter?chg<0:chg>0);
+                  const b2=chg!=null&&(metric.lowerBetter?chg>0:chg<0);
+                  return (
+                    <div key={d.date+i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #0a0a14",background:i%2===0?"transparent":"#0a0a12"}}>
+                      <div style={{fontSize:11,color:"#707090"}}>{d.date}</div>
+                      <div style={{fontSize:11,fontWeight:"bold",color:C.text1,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(d.val,metric.unit)}</div>
+                      <div style={{fontSize:11,color:g2?"#4ade80":b2?"#f87171":"#505070"}}>
+                        {chg!=null?`${g2?"↑":b2?"↓":"→"} ${summaryFmtVal(Math.abs(chg),metric.unit)}`:"—"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes ddSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}`}</style>
+    </div>
+  );
+}
+
 // ─── DAILY HABITS ─────────────────────────────────────────────────────────────
 const DEFAULT_HABITS = [
   {id:"no_bread",       label:"No Bread",          icon:"🍞", avoid:true},
@@ -1910,6 +2184,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
   const [humeScanResult, setHumeScanResult] = useState(null);
   const [humeScanError, setHumeScanError] = useState("");
   const [summaryRange, setSummaryRange] = useState("30d");
+  const [drillMetric, setDrillMetric] = useState(null);
   const [summaryOrder, setSummaryOrder] = useState(() => {
     try { return JSON.parse(localStorage.getItem("bt_summary_order")) || null; } catch { return null; }
   });
@@ -2463,17 +2738,18 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   return (
                     <div key={m.key}
                       draggable
-                      onDragStart={e=>handleDragStart(e,idx)}
+                      onDragStart={e=>{summaryDragRef.current=idx;e.dataTransfer.effectAllowed="move";}}
                       onDragOver={e=>handleDragOver(e,idx)}
                       onDrop={e=>handleDrop(e,idx)}
                       onDragEnd={handleDragEnd}
-                      style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px",cursor:"grab",userSelect:"none",transition:"opacity 0.15s,box-shadow 0.15s"}}
-                      onMouseEnter={e=>{e.currentTarget.style.boxShadow=`0 0 0 1px ${m.col}55`;}}
+                      onClick={()=>{ if(summaryDragRef.current==null) setDrillMetric(m); }}
+                      style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px",cursor:"pointer",userSelect:"none",transition:"opacity 0.15s,box-shadow 0.15s"}}
+                      onMouseEnter={e=>{e.currentTarget.style.boxShadow=`0 0 0 2px ${m.col}66`;}}
                       onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}
                     >
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1.5px",fontWeight:"600"}}>{m.label.toUpperCase()}</div>
-                        <span style={{fontSize:"12px",color:C.bord2,cursor:"grab",opacity:0.5}}>⠿</span>
+                        <span style={{fontSize:"10px",color:m.col,opacity:0.5,letterSpacing:"0.5px"}}>↗ details</span>
                       </div>
                       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:"8px"}}>
                         <div>
@@ -2533,6 +2809,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 </div>
               </div>
             </div>
+            {drillMetric && <MetricDrillDown metric={drillMetric} allData={allDays2} onClose={()=>setDrillMetric(null)}/>}
           </div>
         );
       })()}
