@@ -2447,36 +2447,42 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
     <div style={{minHeight:"100vh",background:C.bg,color:C.text1,fontFamily:"'Courier New',monospace",fontSize:"13px"}}>
 
       {/* ── HEADER */}
-      <div style={{background:"#08080f",borderBottom:`1px solid ${C.bord}`,padding:"10px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:"12px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:"14px"}}>
-          <div style={{fontSize:"18px",fontWeight:"900",letterSpacing:"5px",color:"#00ff9d"}}>⬡ BIOTRACK</div>
-          {liveData ? (
-            <div style={{display:"flex",alignItems:"center",gap:"6px",background:"#00ff9d15",border:"1px solid #00ff9d40",borderRadius:"4px",padding:"4px 12px"}}>
-              <div style={{width:"6px",height:"6px",borderRadius:"50%",background:"#00ff9d",animation:"pulse 2s infinite"}}/>
-              <span style={{fontSize:"10px",color:"#00ff9d",letterSpacing:"2px"}}>LIVE · {liveData.syncDate} {liveData.syncTime}</span>
-            </div>
-          ) : (
-            <div onClick={()=>setTab("sync")} style={{fontSize:"10px",color:"#fbbf24",letterSpacing:"2px",cursor:"pointer",background:"#fbbf2412",border:"1px solid #fbbf2440",borderRadius:"4px",padding:"4px 12px"}}>
-              ◉ DEMO · TAP TO CONNECT
-            </div>
-          )}
-          <button onClick={()=>window.location.reload()} style={{background:"transparent",border:`1px solid ${C.bord2}`,color:C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"1px",borderRadius:"3px",padding:"4px 10px",fontFamily:"'Courier New',monospace"}}>↻</button>
+      <div style={{background:"#08080f",borderBottom:`1px solid ${C.bord}`,padding:"10px 14px"}}>
+        {/* Top row: logo + status + refresh */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+            <div style={{fontSize:"16px",fontWeight:"900",letterSpacing:"4px",color:"#00ff9d"}}>⬡ BIOTRACK</div>
+            {liveData ? (
+              <div style={{display:"flex",alignItems:"center",gap:"5px",background:"#00ff9d15",border:"1px solid #00ff9d40",borderRadius:"4px",padding:"3px 8px"}}>
+                <div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#00ff9d",animation:"pulse 2s infinite"}}/>
+                <span style={{fontSize:"9px",color:"#00ff9d",letterSpacing:"1.5px"}}>LIVE · {liveData.syncDate} {liveData.syncTime}</span>
+              </div>
+            ) : (
+              <div onClick={()=>setTab("sync")} style={{fontSize:"9px",color:"#fbbf24",letterSpacing:"1.5px",cursor:"pointer",background:"#fbbf2412",border:"1px solid #fbbf2440",borderRadius:"4px",padding:"3px 8px"}}>
+                ◉ TAP TO CONNECT
+              </div>
+            )}
+          </div>
+          <button onClick={()=>window.location.reload()} style={{background:"transparent",border:`1px solid ${C.bord2}`,color:C.text3,cursor:"pointer",fontSize:"11px",borderRadius:"3px",padding:"4px 10px",fontFamily:"'Courier New',monospace"}}>↻</button>
         </div>
-        <div style={{display:"flex",gap:"20px",flexWrap:"wrap"}}>
+        {/* KPI strip — horizontally scrollable on mobile */}
+        <div style={{display:"flex",gap:"16px",overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:"2px",scrollbarWidth:"none"}}>
+          <style>{`.kpi-strip::-webkit-scrollbar{display:none}`}</style>
           {kpis.map(k=>(
-            <div key={k.l} style={{textAlign:"center"}}>
-              <div style={{fontSize:"17px",fontWeight:"bold",color:k.c}}>{k.v}</div>
-              <div style={{fontSize:"10px",color:C.text1,letterSpacing:"1px",opacity:0.7}}>{k.l}</div>
+            <div key={k.l} style={{textAlign:"center",flexShrink:0}}>
+              <div style={{fontSize:"15px",fontWeight:"bold",color:k.c}}>{k.v}</div>
+              <div style={{fontSize:"9px",color:C.text1,letterSpacing:"1px",opacity:0.7}}>{k.l}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── NAV */}
-      <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto"}}>
+      {/* ── NAV — horizontally scrollable, no visible scrollbar */}
+      <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
+        <style>{`nav-tabs::-webkit-scrollbar{display:none}`}</style>
         {[["summary","📈 SUMMARY"],["dashboard","📊 DASHBOARD"],["habits","✅ HABITS"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
-          <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 20px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"11px",letterSpacing:"2px",whiteSpace:"nowrap",transition:"color 0.15s"}}>
-            {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"5px"}}>●</span>}
+          <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 16px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"10px",letterSpacing:"1.5px",whiteSpace:"nowrap",transition:"color 0.15s",flexShrink:0}}>
+            {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"4px"}}>●</span>}
           </button>
         ))}
       </div>
@@ -2847,8 +2853,8 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 ))}
               </div>
             </div>
-            <div style={{display:"flex"}}>
-              <div style={{flex:1,padding:"20px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:"14px",alignContent:"start"}}>
+            <div style={{display:"flex",flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 300px",padding:"16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px",alignContent:"start"}}>
                 {orderedMetrics.map((m, idx)=>{
                   const vals=rangeData2.map(d=>d[m.key]).filter(v=>typeof v==="number"&&!isNaN(v));
                   const cur=latestVal(m.key), prev=oldestVal(m.key);
@@ -2889,7 +2895,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   );
                 })}
               </div>
-              <div style={{width:"280px",minWidth:"280px",borderLeft:`1px solid ${C.bord}`,padding:"20px",display:"flex",flexDirection:"column",gap:"16px"}}>
+              <div style={{flex:"1 1 280px",borderLeft:`1px solid ${C.bord}`,padding:"16px",display:"flex",flexDirection:"column",gap:"16px"}}>
                 <div>
                   <div style={{fontSize:"16px",fontWeight:"bold",color:C.text1,marginBottom:"14px"}}>Today's Breakdown</div>
                   {highlights2.slice(0,8).map(m=>{
