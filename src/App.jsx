@@ -2431,12 +2431,33 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
 
   const r1=v=>(v==null||v===undefined||Number.isNaN(v))?"—":typeof v==="number"&&!Number.isInteger(v)?+v.toFixed(1):v;
   const kv=(v,suffix)=>{ const f=r1(v); return f==="—"?"—":`${f}${suffix}`; };
+  // HRV-based readiness: ≥80=elite, 60-79=good, 40-59=moderate, <40=recover
+  const hrvReadiness = today.hrv!=null
+    ? today.hrv>=80?"ELITE":today.hrv>=60?"GOOD":today.hrv>=40?"MOD":"LOW"
+    : "—";
+  const hrvReadinessColor = today.hrv!=null
+    ? today.hrv>=80?"#00ff9d":today.hrv>=60?"#34d399":today.hrv>=40?"#fbbf24":"#f87171"
+    : "#666";
+  const sleepHours = today.sleepDuration ?? today.sleepDur ?? null;
+  const totalBurn = today.totalCaloriesBurned ?? (today.activeCalories!=null&&today.basalCalories!=null ? today.activeCalories+today.basalCalories : today.activeCalories) ?? null;
+
   const kpis=[
-    {l:"BODY FAT",v:kv(today.bodyFat,"%"),c:"#ff6b35"},{l:"WEIGHT",v:kv(today.weight," lbs"),c:"#fbbf24"},
-    {l:"FAT MASS",v:kv(today.fatMass||(today.weight&&today.bodyFat?+(today.weight*today.bodyFat/100).toFixed(1):null)," lbs"),c:"#ff6b35"},{l:"LEAN MASS",v:kv(today.leanMass," lbs"),c:"#34d399"},
-    {l:"HRV",v:kv(today.hrv," ms"),c:"#a78bfa"},{l:"READINESS",v:kv(today.readiness,"/100"),c:"#00e5ff"},
-    {l:"SLEEP",v:kv(today.sleepScore,"/100"),c:"#818cf8"},
-    {l:"STEPS",v:today.steps?Math.round(Number(today.steps)).toLocaleString():"—",c:"#f43f5e"},{l:"PROTEIN",v:kv(today.protein,"g"),c:"#34d399"},
+    {l:"BODY FAT",   v:kv(today.bodyFat,"%"),                                          c:"#ff6b35"},
+    {l:"WEIGHT",     v:kv(today.weight," lbs"),                                         c:"#fbbf24"},
+    {l:"LEAN MASS",  v:kv(today.leanMass," lbs"),                                       c:"#34d399"},
+    {l:"HRV",        v:kv(today.hrv," ms"),                                             c:"#a78bfa"},
+    {l:"READINESS",  v:hrvReadiness,                                                    c:hrvReadinessColor},
+    {l:"SLEEP",      v:sleepHours!=null?sleepHours.toFixed(1)+"h":"—",                  c:"#818cf8"},
+    {l:"STEPS",      v:today.steps?Math.round(Number(today.steps)).toLocaleString():"—",c:"#f43f5e"},
+    {l:"PROTEIN",    v:kv(today.protein,"g"),                                           c:"#f97316"},
+    {l:"CALORIES",   v:today.calories!=null?Math.round(today.calories)+" kcal":"—",     c:"#fbbf24"},
+    {l:"TOTAL BURN", v:totalBurn!=null?Math.round(totalBurn)+" kcal":"—",               c:"#60a5fa"},
+    {l:"WATER",      v:kv(today.water," oz"),                                           c:"#22d3ee"},
+    {l:"EXERCISE",   v:today.exerciseMinutes!=null?Math.round(today.exerciseMinutes)+" min":"—", c:"#a3e635"},
+    {l:"STAND HRS",  v:kv(today.standHours," hrs"),                                    c:"#34d399"},
+    {l:"RESTING HR", v:kv(today.restingHR," bpm"),                                     c:"#fb7185"},
+    {l:"SPO2",       v:kv(today.spo2,"%"),                                             c:"#67e8f9"},
+    {l:"VO2 MAX",    v:kv(today.vo2max,""),                                            c:"#c084fc"},
   ];
 
   const sectionLabel = (txt) => (
