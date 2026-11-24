@@ -1,4 +1,12 @@
 import React, { useState, useCallback, useRef, Fragment, useEffect, useMemo } from "react";
+import MealPlanner from "./MealPlanner.jsx";
+import { WD, dayIndex, resolveRange, mxBuckets, metricDetail, GROUPS, parseSyncDateRobust, mapImport, MON, ymdOf, todayYmd, addDay, mStart, mEnd, shiftM, daysIncl, dayList, shortDay, fmtDate, DK_PRESETS, dkRange, dkLabel, fmtSpan, SUMMARY_RANGES, SUMMARY_METRICS, GROUP_DESC, SRC_NAME, KPI_TEXT_KEYS, KPI_LAST_GROUPS, KPI_LAST_KEYS, KPI_SUM_RE, kpiMode, aggVals, btFmt, dayKey, appName, HK_SECTIONS, HK_LOWER, HK_NEUTRAL, HKC_HIGHER, HKC_NEUTRAL, hkDirection, hkUnit, hkLabel, hkGroups, SEC_SRC, buildKpiBoard, COMPARABLE, sourceCompare } from "./shared/kpi.js";
+import Benchmarks from "./Benchmarks.jsx";
+import { ProfilePanel, FeedbackPanel, GoalCard, ConsentGate, AccountCard, BetaAccessCard } from "./ProfileFeedback.jsx";
+import { screen as trackScreen } from "./analytics.js";
+import { BENCH_REF } from "./shared/benchRef.js";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 // ─── COLOR SYSTEM ─────────────────────────────────────────────────────────────
 // text1: primary white text
@@ -6,15 +14,20 @@ import React, { useState, useCallback, useRef, Fragment, useEffect, useMemo } fr
 // text3: muted but still visible
 // dim:   truly secondary/label
 const C = {
-  text1: "#f0f0f0",   // bright white — all primary labels, values
-  text2: "#c8c8c8",   // light gray — secondary content
-  text3: "#a0a0a0",   // medium gray — units, subtitles
-  dim:   "#707070",   // muted — truly secondary info
-  bg:    "#050509",
-  surf:  "#0e0e18",
-  surf2: "#12121e",
-  bord:  "#1e1e2e",
-  bord2: "#2a2a3e",
+  // Baremetrics-style palette: indigo accent, cool grays, white surfaces
+  text1: "#2B2E4A",   // ink — primary text
+  text2: "#4A4F6E",   // body — secondary text
+  text3: "#7A80A6",   // muted labels, units
+  dim:   "#A9AECB",   // very muted
+  bg:    "#F5F6FA",   // page background
+  surf:  "#FFFFFF",   // card surface
+  surf2: "#EEF0F6",   // subtle row separator
+  bord:  "#E7E8F1",   // border
+  bord2: "#D3D6E6",   // border hover
+  nav:   "#FFFFFF",   // sidebar background
+  teal:  "#5468FF",   // primary accent (name kept for compatibility)
+  green: "#1F9D6B",
+  red:   "#D64545",
 };
 
 // ─── DATA ENGINE ──────────────────────────────────────────────────────────────
@@ -27,6 +40,7 @@ const genDay = (offset) => {
   const wt = ["Push","Pull","Legs","Cardio","Rest","Full Body","Core"][Math.floor(rng(s*7,0,6.99))];
   return {
     date: dateStr, dow, isDemo: true,
+    ymd: `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`,
     weight: +(198-offset*0.06+rng(s,-0.6,0.6)).toFixed(1),
     bodyFat: +(18.4-offset*0.022+rng(s+1,-0.25,0.25)).toFixed(1),
     leanMass: +(162+offset*0.012+rng(s+2,-0.3,0.3)).toFixed(1),
@@ -73,102 +87,10 @@ const genDay = (offset) => {
     leftLegMuscle:  +(27.6 + offset*0.009 + rng(s+39,-0.2,0.2)).toFixed(1),
   };
 };
-const DEMO = Array.from({ length: 3650 }, (_, i) => genDay(i));
+// No generated sample data anywhere: people only ever see their own numbers (or an empty state)
+const DEMO = [];
 
 // ─── SCHEMA ───────────────────────────────────────────────────────────────────
-const GROUPS = [
-  { id:"body", name:"BODY COMPOSITION", src:"HUME", col:"#ff6b35", rows:[
-    {k:"weight",l:"Weight",u:"lbs",hi:true,lib:true},{k:"bodyFat",l:"Body Fat %",u:"%",hi:true,fat:true},
-    {k:"leanMass",l:"Lean Mass",u:"lbs"},{k:"muscleMass",l:"Muscle Mass",u:"lbs",hi:true},
-    {k:"muscleRate",l:"Muscle Rate",u:"%"},{k:"fatMass",l:"Fat Mass",u:"lbs",fat:true},
-    {k:"bmi",l:"BMI",u:"",lib:true},{k:"visceralFat",l:"Visceral Fat",u:"",fat:true},
-    {k:"subcutaneousFat",l:"Subcutaneous Fat",u:"",fat:true},
-    {k:"boneMass",l:"Bone Mass",u:"lbs"},
-    {k:"proteinMass",l:"Protein Mass",u:"lbs"},{k:"proteinRate",l:"Protein Rate",u:"%"},
-    {k:"moisture",l:"Body Water",u:"%"},
-    {k:"bmr",l:"BMR",u:"kcal"},{k:"metabolicAge",l:"Metabolic Age",u:"yrs",lib:true},
-  ]},
-  { id:"segmental", name:"SEGMENTAL BODY FAT", src:"HUME BODY POD", col:"#00e5ff", rows:[
-    {k:"trunkFat",   l:"Trunk",     u:"%", hi:true, fat:true},
-    {k:"rightArmFat",l:"Right Arm", u:"%", fat:true},
-    {k:"leftArmFat", l:"Left Arm",  u:"%", fat:true},
-    {k:"rightLegFat",l:"Right Leg", u:"%", fat:true},
-    {k:"leftLegFat", l:"Left Leg",  u:"%", fat:true},
-    {k:"trunkMuscle",    l:"Trunk Muscle",    u:"lbs"},
-    {k:"rightArmMuscle", l:"Right Arm Muscle",u:"lbs"},
-    {k:"leftArmMuscle",  l:"Left Arm Muscle", u:"lbs"},
-    {k:"rightLegMuscle", l:"Right Leg Muscle",u:"lbs"},
-    {k:"leftLegMuscle",  l:"Left Leg Muscle", u:"lbs"},
-  ]},
-  { id:"sleep", name:"SLEEP & RECOVERY", src:"OURA", col:"#a78bfa", rows:[
-    {k:"sleepScore",l:"Sleep Score",u:"/100",hi:true},{k:"sleepDur",l:"Duration",u:"hrs"},
-    {k:"deepSleep",l:"Deep Sleep",u:"hrs"},{k:"remSleep",l:"REM Sleep",u:"hrs"},
-    {k:"lightSleep",l:"Light Sleep",u:"hrs"},
-    {k:"hrv",l:"HRV",u:"ms",hi:true},{k:"restingHR",l:"Resting HR",u:"bpm",lib:true},
-    {k:"hrRecovery",l:"HR Recovery 1min",u:"bpm"},{k:"respiratoryRate",l:"Respiratory Rate",u:"/min",lib:true},
-    {k:"spo2",l:"SpO2",u:"%"},{k:"sleepingWristTemp",l:"Wrist Temp",u:"°C"},
-    {k:"readiness",l:"Readiness",u:"/100"},
-  ]},
-  { id:"nutrition", name:"NUTRITION", src:"MYFITNESSPAL", col:"#34d399", rows:[
-    {k:"calories",l:"Calories In",u:"kcal",hi:true},{k:"protein",l:"Protein",u:"g",hi:true},
-    {k:"carbs",l:"Carbs",u:"g"},{k:"fat",l:"Fat",u:"g"},{k:"saturatedFat",l:"Saturated Fat",u:"g",lib:true},
-    {k:"sugar",l:"Sugar",u:"g",lib:true},{k:"fiber",l:"Fiber",u:"g"},{k:"cholesterol",l:"Cholesterol",u:"mg",lib:true},
-    {k:"sodium",l:"Sodium",u:"mg",lib:true},{k:"potassium",l:"Potassium",u:"mg"},
-    {k:"calcium",l:"Calcium",u:"mg"},{k:"iron",l:"Iron",u:"mg"},{k:"vitaminC",l:"Vitamin C",u:"mg"},
-    {k:"water",l:"Water",u:"L"},
-  ]},
-  { id:"mealTiming", name:"MEAL TIMING", src:"MANUAL", col:"#34d399", rows:[
-    {k:"breakfastTime", l:"Breakfast",      u:"", type:"time", hi:true},
-    {k:"lunchTime",     l:"Lunch",          u:"", type:"time"},
-    {k:"dinnerTime",    l:"Dinner",         u:"", type:"time"},
-    {k:"lastMealTime",  l:"Last Meal",      u:"", type:"time", hi:true},
-    {k:"breakfastCals", l:"Breakfast Cals", u:"kcal"},
-    {k:"lunchCals",     l:"Lunch Cals",     u:"kcal"},
-    {k:"dinnerCals",    l:"Dinner Cals",    u:"kcal"},
-    {k:"snackCals",     l:"Snack Cals",     u:"kcal"},
-  ]},
-  { id:"activity", name:"ACTIVITY", src:"APPLE HEALTH", col:"#f43f5e", rows:[
-    {k:"steps",l:"Steps",u:"",hi:true},{k:"calsBurned",l:"Cals Burned",u:"kcal"},
-    {k:"activeMins",l:"Active Mins",u:"min"},{k:"avgHR",l:"Avg Heart Rate",u:"bpm"},
-    {k:"standHours",l:"Stand Hours",u:"hrs"},{k:"flightsClimbed",l:"Flights Climbed",u:""},
-    {k:"vo2max",l:"VO2 Max",u:""},{k:"walkingSteadiness",l:"Walking Steadiness",u:"%"},
-  ]},
-  { id:"training", name:"TRAINING", src:"FITBOD", col:"#fbbf24", rows:[
-    {k:"workoutType",l:"Workout Type",u:"",hi:true},{k:"fitbodMuscleGroups",l:"Muscle Groups",u:""},
-    {k:"workoutVol",l:"Total Volume",u:"lbs",hi:true},{k:"workoutDur",l:"Duration",u:"min"},
-    {k:"fitbodSets",l:"Total Sets",u:""},{k:"fitbodWorkingSets",l:"Working Sets",u:""},
-    {k:"fitbodTotalReps",l:"Total Reps",u:""},{k:"fitbodExerciseCount",l:"Exercises",u:""},
-    {k:"fitbodMaxWeightLbs",l:"Max Weight",u:"lbs",hi:true},
-  ]},
-  { id:"measurements", name:"BODY MEASUREMENTS", src:"MANUAL", col:"#00e5ff", rows:[
-    {k:"waistIn",    l:"Waist",        u:"in", hi:true, lib:true},
-    {k:"chestIn",    l:"Chest",        u:"in", hi:true},
-    {k:"hipsIn",     l:"Hips",         u:"in", lib:true},
-    {k:"neckIn",     l:"Neck",         u:"in"},
-    {k:"shouldersIn",l:"Shoulders",    u:"in"},
-    {k:"rightBicepIn",l:"Right Bicep", u:"in", hi:true},
-    {k:"leftBicepIn", l:"Left Bicep",  u:"in"},
-    {k:"rightForearmIn",l:"Right Forearm",u:"in"},
-    {k:"leftForearmIn", l:"Left Forearm", u:"in"},
-    {k:"rightThighIn",l:"Right Thigh", u:"in", hi:true},
-    {k:"leftThighIn", l:"Left Thigh",  u:"in"},
-    {k:"rightCalfIn", l:"Right Calf",  u:"in"},
-    {k:"leftCalfIn",  l:"Left Calf",   u:"in"},
-  ]},
-  { id:"volByGroup", name:"VOLUME BY MUSCLE GROUP", src:"FITBOD", col:"#fbbf24", rows:[
-    {k:"volChest",l:"Chest Vol",u:"lbs",hi:true},{k:"repsChest",l:"Chest Reps",u:""},{k:"setsChest",l:"Chest Sets",u:""},{k:"maxChest",l:"Chest Max",u:"lbs"},
-    {k:"volBack",l:"Back Vol",u:"lbs",hi:true},{k:"repsBack",l:"Back Reps",u:""},{k:"setsBack",l:"Back Sets",u:""},{k:"maxBack",l:"Back Max",u:"lbs"},
-    {k:"volShoulders",l:"Shoulders Vol",u:"lbs",hi:true},{k:"repsShoulders",l:"Shoulders Reps",u:""},{k:"setsShoulders",l:"Shoulders Sets",u:""},{k:"maxShoulders",l:"Shoulders Max",u:"lbs"},
-    {k:"volBiceps",l:"Biceps Vol",u:"lbs",hi:true},{k:"repsBiceps",l:"Biceps Reps",u:""},{k:"setsBiceps",l:"Biceps Sets",u:""},{k:"maxBiceps",l:"Biceps Max",u:"lbs"},
-    {k:"volTriceps",l:"Triceps Vol",u:"lbs",hi:true},{k:"repsTriceps",l:"Triceps Reps",u:""},{k:"setsTriceps",l:"Triceps Sets",u:""},{k:"maxTriceps",l:"Triceps Max",u:"lbs"},
-    {k:"volLegs",l:"Legs Vol",u:"lbs",hi:true},{k:"repsLegs",l:"Legs Reps",u:""},{k:"setsLegs",l:"Legs Sets",u:""},{k:"maxLegs",l:"Legs Max",u:"lbs"},
-    {k:"volCore",l:"Core Vol",u:"lbs",hi:true},{k:"repsCore",l:"Core Reps",u:""},{k:"setsCore",l:"Core Sets",u:""},{k:"maxCore",l:"Core Max",u:"lbs"},
-    {k:"trunkFat",l:"Trunk Fat",u:"%",fat:true},{k:"rightArmFat",l:"Right Arm Fat",u:"%",fat:true},
-    {k:"leftArmFat",l:"Left Arm Fat",u:"%",fat:true},{k:"rightLegFat",l:"Right Leg Fat",u:"%",fat:true},
-    {k:"leftLegFat",l:"Left Leg Fat",u:"%",fat:true},
-  ]},
-];
-
 const LLMS = [
   {id:"claude",name:"Claude",icon:"◆",col:"#cc785c",native:true},
   {id:"gpt4",name:"ChatGPT",icon:"⬡",col:"#10a37f",native:false},
@@ -181,7 +103,7 @@ const PHASES = [
   { color:"#00ff9d", phase:"PHASE 1 — CREATE", title:"Create a New Shortcut",
     steps:[
       "Open the Shortcuts app on your iPhone",
-      'Tap the blue + button top-right → name it "BioTrack Daily Sync"',
+      'Tap the blue + button top-right → name it "BodyData Daily Sync"',
       "Tap the search bar at the bottom to add actions",
     ]
   },
@@ -229,24 +151,25 @@ const PHASES = [
       'Add key "workoutDur" → Variable: lastWorkout → tap to select "Duration" → set unit: Minutes',
     ]
   },
-  { color:"#a78bfa", phase:"PHASE 4 — SAVE & AUTO-OPEN", title:"Copy Data & Auto-Open BioTrack",
-    note:"After this phase, the Shortcut copies your health data AND opens BioTrack automatically — all you do is tap Paste.",
+  { color:"#a78bfa", phase:"PHASE 4 — POST TO API", title:"Send Data Directly to BodyData (No Paste Needed)",
+    note:"This replaces the old clipboard approach — the Shortcut now POSTs directly to your Railway API so automations run 100% silently in the background.",
     steps:[
       'Add action: "Get Text from Dictionary" → Input: the Dictionary above',
-      'Add action: "Copy to Clipboard" → Input: Dictionary as Text',
-      'Add action: "Open URLs" → paste your BioTrack URL (open BioTrack in Safari → Share → Copy Link → paste here)',
-      'Add action: "Show Notification" → Title: "BioTrack Synced ✓" · Body: "Data copied — tap Paste to go live"',
+      'Add action: "Get Contents of URL" → tap the URL field and paste your Railway API URL (e.g. https://biotrack-api-production.up.railway.app/sync)',
+      'In the "Get Contents of URL" action → tap "Show More" → set Method: POST · Request Body: JSON',
+      'Tap "Add new field" → Text → key: "secret" → value: your BodyData secret key (same as in the SYNC tab config above)',
+      'Tap "Add new field" → Dictionary → key: "data" → value: Dictionary (tap the variable from Phase 3)',
+      'Add action: "Show Notification" → Title: "BodyData Synced ✓" · Body: "Health data sent to dashboard" · set "Play Sound": OFF',
     ]
   },
-  { color:"#f43f5e", phase:"PHASE 5 — AUTOMATE", title:"Schedule 4 Daily Automations",
-    note:"Create 4 separate automations — each one points to the same 'BioTrack Daily Sync' shortcut.",
+  { color:"#f43f5e", phase:"PHASE 5 — HOURLY AUTOMATION", title:"Schedule Hourly Automations",
+    note:"Create automations every hour from 5am–11pm — each runs the same shortcut silently. iOS fires these even when your phone is locked.",
     steps:[
       "Tap the Automation tab (bottom of Shortcuts app)",
       "Tap + → Personal Automation → Time of Day",
-      "1st → 4:00 AM · Daily → add 'BioTrack Daily Sync' → turn OFF 'Ask Before Running' → Done ✓",
-      "2nd → 12:00 PM · Daily → add 'BioTrack Daily Sync' → turn OFF 'Ask Before Running' → Done ✓",
-      "3rd → 5:00 PM · Daily → add 'BioTrack Daily Sync' → turn OFF 'Ask Before Running' → Done ✓",
-      "4th → 11:00 PM · Daily → add 'BioTrack Daily Sync' → turn OFF 'Ask Before Running' → Done ✓",
+      "Set time → Daily → add 'BodyData Daily Sync' → turn OFF 'Ask Before Running' → Done ✓",
+      "Repeat for: 5am · 6am · 7am · 8am · 9am · 10am · 11am · 12pm · 1pm · 2pm · 3pm · 4pm · 5pm · 6pm · 7pm · 8pm · 9pm · 10pm · 11pm",
+      "Tip: copy the 5am automation and edit the time — faster than creating each from scratch",
     ]
   },
 ];
@@ -300,7 +223,7 @@ const getCols = (view, live, history) => {
   try {
   return _getColsInner(view, live, history);
   } catch(e) {
-    console.error("[BioTrack] getCols crashed — falling back to empty cols:", e);
+    console.error("[BodyData] getCols crashed — falling back to empty cols:", e);
     return [];
   }
 };
@@ -316,7 +239,11 @@ const _getColsInner = (view, live, history) => {
     if(view==="monthly") return Array.from({length:30},(_,m)=>({label:monthLabel(m),data:aggDays(all.slice(m*30,m*30+30).filter(Boolean))}));
     return Array.from({length:10},(_,y)=>({label:yearLabel(y),data:aggDays(all.slice(y*365,y*365+365).filter(Boolean))}));
   }
-  const realDays = (history||[]).map(h=>({...h, isDemo:false}));
+  const _nowMs = Date.now();
+  const realDays = (history||[])
+    .map(h => ({...h, isDemo:false}))
+    .filter(h => { const pd = parseSyncDateRobust(h.syncDate||h.date); return pd && pd.getTime() <= _nowMs; })
+    .sort((a,b) => (parseSyncDateRobust(b.syncDate||b.date)||new Date(0)) - (parseSyncDateRobust(a.syncDate||a.date)||new Date(0)));
   let all;
   if (live) {
     const liveDate = live.syncDate || live.date;
@@ -400,6 +327,7 @@ const _getColsInner = (view, live, history) => {
         live: i===0 && !!live,
         dayIndex:i,
         allDays:all,
+        dateKey: key,
       };
     });
   }
@@ -675,190 +603,6 @@ function HumeBodyMap({ data, onUpdate }) {
 // ── Robust cross-browser syncDate parser ──────────────────────────────────
 // Safari/WebKit rejects "Apr 12 2026" (no comma) — must normalize to "Apr 12, 2026"
 // Handles: "Apr 12 2026", "Apr 12, 2026", "Apr 12", "2026-04-12"
-const parseSyncDateRobust = (s) => {
-  if (!s) return null;
-  // ISO format: parse as local time to avoid UTC-offset off-by-one
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const [y, m, d] = s.slice(0, 10).split("-").map(Number);
-    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-    return new Date(y, m - 1, d);
-  }
-  // "Mon Day Year" or "Mon Day, Year" — add comma before year if missing (Safari fix)
-  const normed = s.replace(/^([A-Za-z]+\s+\d{1,2})\s+(\d{4})/, "$1, $2");
-  const hasYear = /\b\d{4}\b/.test(normed);
-  const withYear = hasYear ? normed : normed + ", " + new Date().getFullYear();
-  const p2 = new Date(withYear);
-  if (isNaN(p2.getTime())) return null;
-  // No year in the original string: health data can't be from the future, so if the
-  // inferred date is more than 1 day ahead of today, attribute it to the previous year.
-  // (1-day buffer absorbs end-of-day timezone skew for today's syncs.)
-  // Note: same-calendar-month dates from the previous year (e.g. "Jun 3" when today is
-  // Jun 14) are inherently ambiguous without a year — store dates with year to avoid this.
-  if (!hasYear && p2 > new Date(Date.now() + 86400000)) p2.setFullYear(p2.getFullYear() - 1);
-  return p2;
-};
-
-const mapImport = (p) => {
-  // Derive dow/date — prefer syncDate (actual data date) over _receivedAt (import time)
-  // syncDate can be "Apr 12 2026" (with year, no comma) or "Apr 12" (no year)
-  let refDate;
-  if (p.syncDate) {
-    refDate = parseSyncDateRobust(p.syncDate);
-  }
-  if (!refDate || isNaN(refDate.getTime())) {
-    refDate = p._receivedAt ? new Date(p._receivedAt) : new Date();
-  }
-  const _fmtDateWithYear = (d) => {
-    const MO = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return `${MO[d.getMonth()]} ${d.getDate()} ${d.getFullYear()}`;
-  };
-  const m = {
-    syncDate: p.syncDate || _fmtDateWithYear(refDate),
-    syncTime: p.syncTime||new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}),
-    dow: p.dow||["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][refDate.getDay()],
-    date: p.date || _fmtDateWithYear(refDate),
-    steps: p.steps||p.stepCount, calsBurned: p.activeCalories||p.calsBurned||p.totalCaloriesBurned,
-    restingHR: p.restingHR||p.restingHeartRate, avgHR: p.avgHR||p.averageHeartRate||p.heartRate,
-    vo2max: p.vo2max||p.vo2Max, standHours: p.standHours,
-    weight: p.weight||p.bodyWeight, bodyFat: p.bodyFat||p.bodyFatPercentage,
-    leanMass: p.leanMass||p.leanBodyMass, bmi: p.bmi, visceralFat: p.visceralFat,
-    muscleMass: p.muscleMass, muscleRate: p.muscleRate, fatMass: p.fatMass,
-    subcutaneousFat: p.subcutaneousFat, boneMass: p.boneMass,
-    proteinMass: p.proteinMass, proteinRate: p.proteinRate, moisture: p.moisture,
-    bmr: p.bmr||p.basalMetabolicRate||p.basalCalories, metabolicAge: p.metabolicAge||p.metabolic_age,
-    calories: p.calories||p.dietaryCalories, protein: p.protein,
-    carbs: p.carbs||p.carbohydrates, fat: p.fat, fiber: p.fiber, water: p.water,
-    sleepDur: p.sleepDur||p.sleepDuration, deepSleep: p.deepSleep||p.sleepDeepMin, remSleep: p.remSleep||p.sleepREMMin,
-    lightSleep: p.lightSleep||p.sleepCoreMin, spo2: p.spo2, sleepingWristTemp: p.sleepingWristTemp,
-    distanceMiles: p.distanceMiles||(p.distanceKm ? +((p.distanceKm)/1.60934).toFixed(2) : null),
-    hrRecovery: p.hrRecovery, walkingSteadiness: p.walkingSteadiness,
-    respiratoryRate: p.respiratoryRate, flightsClimbed: p.flightsClimbed||p.flights,
-    sugar: p.sugar, cholesterol: p.cholesterol, saturatedFat: p.saturatedFat,
-    potassium: p.potassium, calcium: p.calcium, iron: p.iron, vitaminC: p.vitaminC,
-    sodium: p.sodium,
-    sleepScore: p.sleepScore, hrv: p.hrv, readiness: p.readiness,
-    workoutType: (p.workoutType||"").replace("Traditional Strength Training","Strength").replace("High Intensity Interval Training","HIIT").replace("Functional Strength Training","Functional"), workoutDur: p.workoutDur||p.workoutDuration,
-    workoutVol: p.workoutVol||p.workoutCalories, exercises: p.exercises||p.fitbodExercises,
-    fitbodSets: p.fitbodSets, fitbodWorkingSets: p.fitbodWorkingSets, fitbodWarmupSets: p.fitbodWarmupSets,
-    fitbodTotalReps: p.fitbodTotalReps, fitbodExerciseCount: p.fitbodExerciseCount,
-    fitbodMaxWeightLbs: p.fitbodMaxWeightLbs, fitbodMuscleGroups: p.fitbodMuscleGroups,
-    // Per-muscle-group volume, reps, sets, max
-    volChest: p.volChest, volBack: p.volBack, volShoulders: p.volShoulders,
-    volBiceps: p.volBiceps, volTriceps: p.volTriceps, volLegs: p.volLegs, volCore: p.volCore,
-    repsChest: p.repsChest, repsBack: p.repsBack, repsShoulders: p.repsShoulders,
-    repsBiceps: p.repsBiceps, repsTriceps: p.repsTriceps, repsLegs: p.repsLegs, repsCore: p.repsCore,
-    setsChest: p.setsChest, setsBack: p.setsBack, setsShoulders: p.setsShoulders,
-    setsBiceps: p.setsBiceps, setsTriceps: p.setsTriceps, setsLegs: p.setsLegs, setsCore: p.setsCore,
-    maxChest: p.maxChest, maxBack: p.maxBack, maxShoulders: p.maxShoulders,
-    maxBiceps: p.maxBiceps, maxTriceps: p.maxTriceps, maxLegs: p.maxLegs, maxCore: p.maxCore,
-    // Body measurements (inches) — manually entered
-    waistIn:     p.waistIn     || p.waist,
-    chestIn:     p.chestIn     || p.chest,
-    hipsIn:      p.hipsIn      || p.hips,
-    neckIn:      p.neckIn      || p.neck,
-    shouldersIn: p.shouldersIn || p.shoulders,
-    rightBicepIn:  p.rightBicepIn  || p.rightBicep,
-    leftBicepIn:   p.leftBicepIn   || p.leftBicep,
-    rightForearmIn:p.rightForearmIn|| p.rightForearm,
-    leftForearmIn: p.leftForearmIn || p.leftForearm,
-    rightThighIn:  p.rightThighIn  || p.rightThigh,
-    leftThighIn:   p.leftThighIn   || p.leftThigh,
-    rightCalfIn:   p.rightCalfIn   || p.rightCalf,
-    leftCalfIn:    p.leftCalfIn    || p.leftCalf,
-    // Hume segmental — accept multiple naming conventions
-    trunkFat:    p.trunkFat    || p.trunk_fat    || p.torsoFat  || p.torso_fat,
-    rightArmFat: p.rightArmFat || p.right_arm_fat|| p.rightArm,
-    leftArmFat:  p.leftArmFat  || p.left_arm_fat || p.leftArm,
-    rightLegFat: p.rightLegFat || p.right_leg_fat|| p.rightLeg,
-    leftLegFat:  p.leftLegFat  || p.left_leg_fat || p.leftLeg,
-    trunkMuscle:    p.trunkMuscle    || p.trunk_muscle,
-    rightArmMuscle: p.rightArmMuscle || p.right_arm_muscle,
-    leftArmMuscle:  p.leftArmMuscle  || p.left_arm_muscle,
-    rightLegMuscle: p.rightLegMuscle || p.right_leg_muscle,
-    leftLegMuscle:  p.leftLegMuscle  || p.left_leg_muscle,
-    // Meal timing (manually logged or from iOS Shortcut)
-    breakfastTime: p.breakfastTime || null,
-    lunchTime:     p.lunchTime     || null,
-    dinnerTime:    p.dinnerTime    || null,
-    lastMealTime:  p.lastMealTime  || null,
-    breakfastCals: p.breakfastCals || null,
-    lunchCals:     p.lunchCals     || null,
-    dinnerCals:    p.dinnerCals    || null,
-    snackCals:     p.snackCals     || null,
-  };
-  // Compute leanMass from weight and bodyFat if not provided
-  if(!m.leanMass && m.weight && m.bodyFat) m.leanMass = +(m.weight * (1 - m.bodyFat/100)).toFixed(1);
-  if(!m.fatMass && m.weight && m.bodyFat) m.fatMass = +(m.weight * m.bodyFat/100).toFixed(1);
-  // Compute activeMins from workoutDur if not provided
-  if(!m.activeMins && m.workoutDur) m.activeMins = Math.round(m.workoutDur);
-  Object.keys(m).forEach(k=>{ if(m[k]===null||m[k]===undefined) delete m[k]; });
-  return m;
-};
-
-// ─── SUMMARY TAB CONSTANTS (defined outside component to avoid remounting) ────
-const SUMMARY_RANGES = [
-  {id:"7d",  label:"Last 7 days"},
-  {id:"30d", label:"Last 30 days"},
-  {id:"90d", label:"Last 3 months"},
-  {id:"180d",label:"Last 6 months"},
-  {id:"365d",label:"This year"},
-  {id:"all", label:"All time"},
-];
-
-const SUMMARY_METRICS = [
-  {key:"weight",        label:"Weight",           unit:"lbs", col:"#60a5fa", lowerBetter:true},
-  {key:"bodyFat",       label:"Body Fat",          unit:"%",   col:"#f87171", lowerBetter:true},
-  {key:"fatMass",       label:"Fat Mass",          unit:"lbs", col:"#fb923c", lowerBetter:true},
-  {key:"leanMass",      label:"Lean Mass",         unit:"lbs", col:"#4ade80"},
-  {key:"hrv",           label:"HRV",               unit:"ms",  col:"#a78bfa"},
-  {key:"restingHR",     label:"Resting HR",        unit:"bpm", col:"#fb7185", lowerBetter:true},
-  {key:"vo2max",        label:"VO2 Max",           unit:"",    col:"#22d3ee"},
-  {key:"sleepDur",      label:"Sleep",             unit:"hrs", col:"#818cf8"},
-  {key:"deepSleep",     label:"Deep Sleep",        unit:"min", col:"#6366f1"},
-  {key:"steps",         label:"Steps",             unit:"k",   col:"#34d399"},
-  {key:"distanceMiles", label:"Distance",          unit:"mi",  col:"#86efac"},
-  {key:"calories",      label:"Calories",          unit:"kcal",col:"#fbbf24"},
-  {key:"protein",       label:"Protein",           unit:"g",   col:"#f97316"},
-  {key:"carbs",         label:"Carbs",             unit:"g",   col:"#facc15"},
-  {key:"fat",           label:"Fat",               unit:"g",   col:"#f9a8d4"},
-  {key:"workoutVol",    label:"Workout Volume",    unit:"lbs", col:"#e879f9"},
-  {key:"workoutDur",    label:"Workout Duration",  unit:"min", col:"#c084fc"},
-  {key:"calsBurned",       label:"Active Calories",    unit:"kcal",col:"#2dd4bf"},
-  {key:"spo2",             label:"SpO2",               unit:"%",   col:"#67e8f9"},
-  // ── Body composition extended
-  {key:"bmi",              label:"BMI",                unit:"",    col:"#94a3b8"},
-  {key:"bmr",              label:"Basal Metabolic Rate",unit:"kcal",col:"#fcd34d"},
-  {key:"muscleMass",       label:"Muscle Mass",        unit:"lbs", col:"#34d399"},
-  {key:"boneMass",         label:"Bone Mass",          unit:"lbs", col:"#cbd5e1"},
-  // ── Cardio extended
-  {key:"avgHR",            label:"Avg Heart Rate",     unit:"bpm", col:"#f43f5e"},
-  {key:"respiratoryRate",  label:"Respiratory Rate",   unit:"brpm",col:"#7dd3fc"},
-  // ── Sleep extended
-  {key:"remSleep",         label:"REM Sleep",          unit:"min", col:"#818cf8"},
-  {key:"lightSleep",       label:"Core Sleep",         unit:"min", col:"#a5b4fc"},
-  // ── Activity extended
-  {key:"flightsClimbed",   label:"Flights Climbed",    unit:"",    col:"#6ee7b7"},
-  // ── Nutrition extended
-  {key:"fiber",            label:"Fiber",              unit:"g",   col:"#84cc16"},
-  {key:"water",            label:"Water",              unit:"L",   col:"#38bdf8"},
-  {key:"sugar",            label:"Sugar",              unit:"g",   col:"#fb923c", lowerBetter:true},
-  {key:"sodium",           label:"Sodium",             unit:"mg",  col:"#f59e0b", lowerBetter:true},
-  // ── Training extended
-  {key:"fitbodSets",        label:"Total Sets",        unit:"",    col:"#d946ef"},
-  {key:"fitbodWorkingSets", label:"Working Sets",      unit:"",    col:"#c026d3"},
-  {key:"fitbodTotalReps",   label:"Total Reps",        unit:"",    col:"#a855f7"},
-  {key:"fitbodExerciseCount",label:"Exercises",        unit:"",    col:"#8b5cf6"},
-  {key:"fitbodMaxWeightLbs",label:"Max Weight Lifted", unit:"lbs", col:"#ec4899"},
-  // ── Per-muscle group volume
-  {key:"volChest",         label:"Chest Volume",       unit:"lbs", col:"#ef4444"},
-  {key:"volBack",          label:"Back Volume",        unit:"lbs", col:"#f97316"},
-  {key:"volShoulders",     label:"Shoulders Volume",   unit:"lbs", col:"#eab308"},
-  {key:"volBiceps",        label:"Biceps Volume",      unit:"lbs", col:"#22c55e"},
-  {key:"volTriceps",       label:"Triceps Volume",     unit:"lbs", col:"#14b8a6"},
-  {key:"volLegs",          label:"Legs Volume",        unit:"lbs", col:"#3b82f6"},
-  {key:"volCore",          label:"Core Volume",        unit:"lbs", col:"#7c3aed"},
-];
-
 function summarySparkline(vals, col, h, w) {
   const nums = (vals||[]).filter(v => typeof v === "number" && !isNaN(v));
   if (nums.length < 2) {
@@ -988,6 +732,1139 @@ function inlineMarkdown(text) {
   return parts.length ? parts : text;
 }
 
+// ─── KPI BOARD (card, trend chart and drilldown ported from sellmore.me/crm) ──
+const IcSvg = ({children}) => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>{children}</svg>;
+const IcSearch = () => <IcSvg><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></IcSvg>;
+const IcSliders = () => <IcSvg><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></IcSvg>;
+const IcCal = () => <IcSvg><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></IcSvg>;
+const IcChev = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6"/></svg>;
+const IcBack = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 6-6 6 6 6"/></svg>;
+
+function BtDelta({d, pts, lb, neu}) {
+  if (d == null || !isFinite(d)) return null;
+  const good = lb ? d < 0 : d > 0, zero = neu || Math.abs(d) < .05;   // neutral metrics: gray, no good/bad
+  return <span style={{fontSize:"11px",fontWeight:600,padding:"2px 6px",borderRadius:"6px",whiteSpace:"nowrap",
+    background:zero?"#F1F2F8":good?"rgba(31,157,107,.1)":"rgba(214,69,69,.08)",color:zero?"#7A80A6":good?C.green:C.red}}>
+    {d >= 0 ? "↑" : "↓"}{Math.abs(d).toFixed(1)}{pts ? " pts" : "%"}</span>;
+}
+function btSmooth(P) {
+  if (P.length < 3) return "M" + P.map(p => p.join(",")).join(" L");
+  let d = "M" + P[0][0] + "," + P[0][1];
+  for (let i = 0; i < P.length - 1; i++) {
+    const p0 = P[i - 1] || P[i], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2] || p2, t = .18;
+    d += " C" + (p1[0] + (p2[0] - p0[0]) * t) + "," + (p1[1] + (p2[1] - p0[1]) * t) + " " + (p2[0] - (p3[0] - p1[0]) * t) + "," + (p2[1] - (p3[1] - p1[1]) * t) + " " + p2[0] + "," + p2[1];
+  }
+  return d;
+}
+// card chart: line between min/max gridlines, max label, first/middle/last date, dashed last step while today is still in progress
+function BtTrendChart({vals, labels, unit, partial}) {
+  const W = 300, H = 92, L = 4, B = 16, n = vals.length;
+  const nums = vals.filter(v => v != null);
+  if (!nums.length) return <div style={{marginTop:"10px",height:H + 13,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"11.5px",color:C.text3,border:"1px dashed #E7E8F1",borderRadius:"8px"}}>No data in this range</div>;
+  const top = Math.max(...nums), low = Math.min(...nums);
+  let hi = top, lo = low; if (hi === lo) { const p = Math.abs(hi) * .05 || 1; hi += p; lo -= p; }
+  const x = i => n === 1 ? W / 2 : L + i / (n - 1) * (W - 2 * L), y = v => 6 + (1 - (v - lo) / (hi - lo)) * (H - B - 10);
+  const P = vals.map((v, i) => v == null ? null : [x(i), y(v)]).filter(Boolean), m = P.length;
+  const dash = partial && m > 1 && vals[n - 1] != null, solid = dash ? P.slice(0, -1) : P;
+  const tick = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
+  return (
+    <div style={{position:"relative",marginTop:"10px"}}>
+      <div style={{position:"absolute",right:0,top:"-2px",fontSize:"10px",color:C.text3}}>{btFmt(top, unit)}</div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block",overflow:"visible"}}>
+        <line x1="0" x2={W} y1={y(hi === top ? top : hi)} y2={y(hi === top ? top : hi)} stroke="#E7E8F1" strokeDasharray="2 3" vectorEffect="non-scaling-stroke"/>
+        <line x1="0" x2={W} y1={y(lo)} y2={y(lo)} stroke="#E4E2DC" vectorEffect="non-scaling-stroke"/>
+        {m === 1 ? <circle cx={P[0][0]} cy={P[0][1]} r="3.5" fill={C.teal}/> : <>
+          <path d={btSmooth(solid)} fill="none" stroke={C.teal} strokeWidth="1.8" vectorEffect="non-scaling-stroke"/>
+          {dash && <path d={"M" + P[m - 2].join(",") + " L" + P[m - 1].join(",")} fill="none" stroke={C.teal} strokeWidth="1.8" strokeDasharray="3 3" vectorEffect="non-scaling-stroke"/>}
+        </>}
+      </svg>
+      <div style={{position:"relative",height:"13px",fontSize:"10px",color:C.text3}}>
+        {tick.map(i => <span key={i} style={{position:"absolute",top:0,whiteSpace:"nowrap",...(n === 1 || (i !== 0 && i !== n - 1) ? {left:"50%",transform:"translateX(-50%)"} : i === 0 ? {left:0} : {right:0})}}>{labels[i]}</span>)}
+      </div>
+    </div>
+  );
+}
+function BtKpiCard({c, cmpLbl, onOpen}) {
+  return (
+    <div className="bt-kcard" tabIndex={0} onClick={onOpen} onKeyDown={e => { if (e.key === "Enter") onOpen(); }}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:"8px"}}>
+        <span className="bt-eyebrow" style={{flex:1,minWidth:0,lineHeight:1.35,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={c.label}>{c.label}</span>
+        {c.delta != null ? <BtDelta d={c.delta} pts={c.pts} lb={c.lb} neu={c.neu}/>
+          : c.text || c.mode === "last" ? <span style={{fontSize:"10.5px",color:C.text3,whiteSpace:"nowrap"}}>latest</span> : null}
+      </div>
+      <div style={{display:"flex",alignItems:"baseline",gap:"8px",marginTop:"6px",flexWrap:"nowrap",minWidth:0}}>
+        <span className="bt-num" style={{fontSize:c.text ? "22px" : "28px",lineHeight:1.1,color:C.text1,whiteSpace:"nowrap",flexShrink:0}}>{c.fmt}</span>
+        {!c.text && <span style={{fontSize:"12.5px",color:C.text3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}} title={"Compared with " + cmpLbl}>from {c.prevFmt}</span>}
+      </div>
+      <div style={{fontSize:"11.5px",color:C.text3,marginTop:"3px",minHeight:"15px"}}>{c.sub}</div>
+      {c.apps?.length > 0 && <div title={c.apps.join(", ")} style={{fontSize:"11px",color:C.text2,marginTop:"2px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+        via {c.apps.slice(0, 3).join(" · ")}{c.apps.length > 3 ? ` +${c.apps.length - 3}` : ""}</div>}
+      {!c.text && <div style={{marginTop:"auto"}}><BtTrendChart vals={c.vals} labels={c.labels} unit={c.unit} partial={c.partial}/></div>}
+    </div>
+  );
+}
+function BtBigChart({labels, vals, unit}) {
+  const W = 720, H = 240, L = 62, R = 12, T = 12, B = 28;
+  const pts = vals.map((v, i) => [i, v]).filter(p => p[1] != null);
+  if (!pts.length) return <div style={{height:H,display:"flex",alignItems:"center",justifyContent:"center",color:C.text3,fontSize:"13px"}}>No data in this range.</div>;
+  let mn = Math.min(...pts.map(p => p[1])), mx = Math.max(...pts.map(p => p[1]));
+  if (mx === mn) { const p = Math.abs(mx) * .05 || 1; mx += p; mn -= p; }
+  const step = Math.pow(10, Math.floor(Math.log10((mx - mn) / 4)));
+  const st = [1, 2, 5, 10].map(s => s * step).find(s => (mx - mn) / s <= 5) || step * 10;
+  const bot = Math.floor(mn / st) * st, top = Math.ceil(mx / st) * st || bot + st;
+  const xs = (vals.length - 1) || 1, X = i => vals.length === 1 ? (L + W - R) / 2 : L + i / xs * (W - L - R), Y = v => T + (1 - (v - bot) / (top - bot)) * (H - T - B);
+  const P = pts.map(p => [X(p[0]), Y(p[1])]), d = btSmooth(P);
+  const ticks = []; for (let v = bot; v <= top + st * 1e-6; v += st) ticks.push(+v.toFixed(8));
+  const every = Math.ceil(labels.length / 8);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{display:"block",maxWidth:"100%"}}>
+      {ticks.map(t => <g key={t}><line x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} stroke="#EFEEEA"/><text x={L - 8} y={Y(t) + 4} textAnchor="end" fontSize="10.5" fill="#7A80A6" fontFamily="Inter">{btFmt(t, unit)}</text></g>)}
+      {P.length > 1 && <path d={d + ` L${P[P.length - 1][0]},${Y(bot)} L${P[0][0]},${Y(bot)} Z`} fill="rgba(12,70,75,.08)"/>}
+      {P.length > 1 && <path d={d} fill="none" stroke={C.teal} strokeWidth="2"/>}
+      {pts.map((p, i) => <circle key={i} cx={P[i][0]} cy={P[i][1]} r="3" fill="#fff" stroke={C.teal} strokeWidth="1.5"><title>{labels[p[0]]}: {btFmt(p[1], unit)}</title></circle>)}
+      {labels.map((l, i) => i % every === 0 || i === labels.length - 1 ? <text key={i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="10.5" fill="#7A80A6" fontFamily="Inter">{l}</text> : null)}
+    </svg>
+  );
+}
+// Bars over time (same buckets as the trend line)
+function BtBars({labels, vals, unit}) {
+  const W = 720, H = 240, L = 62, R = 12, T = 12, B = 28, n = vals.length;
+  const nums = vals.filter(v => v != null);
+  if (!nums.length) return <div style={{height:H,display:"flex",alignItems:"center",justifyContent:"center",color:C.text3,fontSize:"13px"}}>No data in this range.</div>;
+  const mx = Math.max(...nums, 0), mn = Math.min(...nums, 0), span = (mx - mn) || 1;
+  const bw = (W - L - R) / n, y = v => T + (1 - (v - mn) / span) * (H - T - B), y0 = y(0);
+  const ticks = [mn, mn + span / 2, mx];
+  const lab = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i);
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
+      {ticks.map((t, i) => <g key={i}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#EEF0F6"/>
+        <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill={C.text3}>{btFmt(t, unit)}</text></g>)}
+      {vals.map((v, i) => v == null ? null : <rect key={i} x={L + i * bw + bw * .15} width={Math.max(1, bw * .7)} y={Math.min(y(v), y0)} height={Math.max(1, Math.abs(y0 - y(v)))} rx="2" fill={C.teal} opacity=".85"><title>{labels[i]}: {btFmt(v, unit)}</title></rect>)}
+      {lab.map(i => <text key={i} x={L + i * bw + bw / 2} y={H - 8} textAnchor="middle" fontSize="11" fill={C.text3}>{labels[i]}</text>)}
+    </svg>
+  );
+}
+// Histogram: how often each value range occurred, from the daily readings in the range
+function BtHistogram({values, unit}) {
+  const W = 720, H = 240, L = 46, R = 12, T = 12, B = 34;
+  if (values.length < 2) return <div style={{height:H,display:"flex",alignItems:"center",justifyContent:"center",color:C.text3,fontSize:"13px"}}>Need at least two days of data for a histogram.</div>;
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const k = Math.min(16, Math.max(5, Math.round(Math.sqrt(values.length)))), w = (hi - lo) / k || 1;
+  const bins = Array.from({length: k}, (_, i) => ({a: lo + i * w, b: lo + (i + 1) * w, n: 0}));
+  for (const v of values) bins[Math.min(k - 1, Math.floor((v - lo) / w))].n++;
+  const top = Math.max(...bins.map(b => b.n)), bw = (W - L - R) / k, y = n => T + (1 - n / top) * (H - T - B);
+  const mean = values.reduce((a, b) => a + b, 0) / values.length, mx = L + (mean - lo) / ((hi - lo) || 1) * (W - L - R);
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
+      {[0, Math.round(top / 2), top].map((t, i) => <g key={i}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#EEF0F6"/>
+        <text x={L - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill={C.text3}>{t}</text></g>)}
+      {bins.map((b, i) => <rect key={i} x={L + i * bw + 1} width={bw - 2} y={y(b.n)} height={H - B - y(b.n)} rx="2" fill={C.teal} opacity=".85">
+        <title>{btFmt(b.a, unit)} – {btFmt(b.b, unit)}: {b.n} day{b.n === 1 ? "" : "s"}</title></rect>)}
+      <line x1={mx} x2={mx} y1={T} y2={H - B} stroke={C.text1} strokeDasharray="4 3"/>
+      <text x={mx + 4} y={T + 10} fontSize="11" fill={C.text1}>avg {btFmt(mean, unit)}</text>
+      {[0, Math.floor(k / 2), k].map(i => <text key={i} x={L + i * bw} y={H - 12} textAnchor="middle" fontSize="11" fill={C.text3}>{btFmt(lo + i * w, unit)}</text>)}
+      <text x={(W + L) / 2} y={H} textAnchor="middle" fontSize="10.5" fill={C.text3}>days at each value</text>
+    </svg>
+  );
+}
+// ─── METRICS EXPLORER: every metric in a left nav; trend, comparisons, weekday pattern, histogram, sources ───
+function BtBigLine({labels, vals, unit, color = "#5468FF"}) {
+  const [hov, setHov] = useState(null), [W, setW] = useState(900), box = useRef(null);
+  useEffect(() => { const el = box.current; if (!el) return; const ro = new ResizeObserver(([e]) => setW(Math.max(300, Math.round(e.contentRect.width)))); ro.observe(el); return () => ro.disconnect(); }, []);
+  const H = W < 500 ? 220 : 300, L = W < 500 ? 52 : 70, R = 16, T = 14, B = 30, n = vals.length;
+  const nums = vals.filter(v => v != null);
+  if (!nums.length) return <div style={{height: H, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: "13px"}}>No data in this range.</div>;
+  let hi = Math.max(...nums), lo = Math.min(...nums); if (hi === lo) { const p = Math.abs(hi) * .05 || 1; hi += p; lo -= p; }
+  const pad = (hi - lo) * .08; hi += pad; lo = Math.max(lo - pad, Math.min(...nums) >= 0 ? 0 : -Infinity);
+  const x = i => n === 1 ? (L + W - R) / 2 : L + i / (n - 1) * (W - L - R), y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const pts = vals.map((v, i) => v == null ? null : [x(i), y(v)]);
+  const segs = []; let cur = [];
+  for (const p of pts) { if (p) cur.push(p); else if (cur.length) { segs.push(cur); cur = []; } } if (cur.length) segs.push(cur);
+  const path = s => "M" + s.map(p => p.map(v => v.toFixed(1)).join(",")).join(" L");
+  const ticks = [0, 1, 2, 3, 4].map(i => lo + (hi - lo) * i / 4);
+  const step = Math.max(1, Math.ceil(n / Math.max(3, Math.floor(W / 100))));
+  const move = e => { const r = e.currentTarget.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W; let best = null, bd = 1e9;
+    vals.forEach((v, i) => { if (v != null && Math.abs(x(i) - px) < bd) { bd = Math.abs(x(i) - px); best = i; } }); setHov(best); };
+  return (
+    <div ref={box} style={{position: "relative"}}>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display: "block"}} onMouseMove={move} onMouseLeave={() => setHov(null)}>
+        {ticks.map((t, i) => <g key={i}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#EEF0F6" strokeDasharray="4 4"/>
+          <text x={L - 10} y={y(t) + 4} textAnchor="end" fontSize="11.5" fill={C.text3}>{btFmt(t, unit)}</text></g>)}
+        {segs.map((s, i) => <g key={i}>
+          {s.length > 1 && <path d={`${path(s)} L${s[s.length - 1][0]},${H - B} L${s[0][0]},${H - B} Z`} fill={color} opacity=".07"/>}
+          <path d={path(s)} fill="none" stroke={color} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round"/>
+          {s.length === 1 && <circle cx={s[0][0]} cy={s[0][1]} r="3.5" fill={color}/>}</g>)}
+        {labels.map((l, i) => i % step === 0 && <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11.5" fill={C.text3}>{l}</text>)}
+        {hov != null && <g><line x1={x(hov)} x2={x(hov)} y1={T} y2={H - B} stroke="#C9CDE0"/><circle cx={x(hov)} cy={y(vals[hov])} r="5" fill="#fff" stroke={color} strokeWidth="2.5"/></g>}
+      </svg>
+      {hov != null && <div style={{position: "absolute", left: `${x(hov) / W * 100}%`, top: `${y(vals[hov]) / H * 100}%`, transform: `translate(${x(hov) > W * .8 ? "-110%" : "12px"},-110%)`, background: "#2B2E4A", color: "#fff", borderRadius: 8, padding: "6px 10px", fontSize: 12, pointerEvents: "none", whiteSpace: "nowrap"}}>
+        <div style={{opacity: .7}}>{labels[hov]}</div><div style={{fontWeight: 700, fontSize: 14}}>{btFmt(vals[hov], unit)}</div></div>}
+    </div>);
+}
+function MxWeekday({vals, labels: full, unit, lb}) {
+  const [W, setW] = useState(900), box = useRef(null);
+  useEffect(() => { const el = box.current; if (!el) return; const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width)))); ro.observe(el); return () => ro.disconnect(); }, []);
+  const labels = W < 560 ? full.map(l => l.slice(0, 3)) : full, fs = W < 420 ? 10.5 : 13;
+  const H = 230, T = 26, B = 30, L = 8, R = 8, n = vals.length;
+  const nums = vals.filter(v => v != null);
+  if (!nums.length) return <div style={{height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: "13px"}}>Not enough days in this range.</div>;
+  const mx = Math.max(...nums), bw = (W - L - R) / n, y = v => T + (1 - v / (mx || 1)) * (H - T - B);
+  const best = vals.indexOf(lb ? Math.min(...nums) : mx);
+  return (<div ref={box}><svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display: "block"}}>
+    <line x1={L} x2={W - R} y1={H - B} y2={H - B} stroke="#EEF0F6"/>
+    {vals.map((v, i) => v == null ? null : <g key={i}>
+      <rect x={L + i * bw + bw * .18} width={bw * .64} y={y(v)} height={H - B - y(v)} rx="4" fill="#5468FF" opacity={i === best ? 1 : .55}/>
+      <text x={L + i * bw + bw / 2} y={y(v) - 7} textAnchor="middle" fontSize={fs} fontWeight="600" fill={C.text1}>{btFmt(v, unit)}</text></g>)}
+    {labels.map((l, i) => <text key={i} x={L + i * bw + bw / 2} y={H - 9} textAnchor="middle" fontSize={fs} fill={C.text3}>{l}</text>)}
+  </svg></div>);
+}
+function MxHistogram({values, unit}) {
+  const [W, setW] = useState(900), box = useRef(null);
+  useEffect(() => { const el = box.current; if (!el) return; const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.round(e.contentRect.width)))); ro.observe(el); return () => ro.disconnect(); }, []);
+  if (values.length < 2) return <div style={{height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: "13px"}}>Need at least two days of data.</div>;
+  const H = 230, L = 34, R = 10, T = 22, B = 34, fs = W < 420 ? 10.5 : 12;
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const k = Math.min(W < 500 ? 10 : 18, Math.max(5, Math.round(Math.sqrt(values.length)))), w = (hi - lo) / k || 1;
+  const bins = Array.from({length: k}, (_, i) => ({a: lo + i * w, b: lo + (i + 1) * w, n: 0}));
+  for (const v of values) bins[Math.min(k - 1, Math.floor((v - lo) / w))].n++;
+  const top = Math.max(...bins.map(b => b.n)), bw = (W - L - R) / k, y = n => T + (1 - n / top) * (H - T - B);
+  const mean = values.reduce((a, b) => a + b, 0) / values.length, mx = L + (mean - lo) / ((hi - lo) || 1) * (W - L - R);
+  return (<div ref={box}><svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display: "block"}}>
+    {[0, Math.round(top / 2), top].map((t, i) => <g key={i}><line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#EEF0F6" strokeDasharray="4 4"/>
+      <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize={fs} fill={C.text3}>{t}</text></g>)}
+    {bins.map((b, i) => <rect key={i} x={L + i * bw + 2} width={Math.max(1, bw - 4)} y={y(b.n)} height={H - B - y(b.n)} rx="3" fill="#5468FF" opacity=".8">
+      <title>{btFmt(b.a, unit)} – {btFmt(b.b, unit)}: {b.n} day{b.n === 1 ? "" : "s"}</title></rect>)}
+    <line x1={mx} x2={mx} y1={T - 6} y2={H - B} stroke={C.text1} strokeDasharray="4 3"/>
+    <text x={Math.min(mx + 5, W - 90)} y={T - 8} fontSize={fs} fill={C.text1} fontWeight="600">avg {btFmt(mean, unit)}</text>
+    {[0, Math.floor(k / 2), k].map(i => <text key={i} x={Math.min(W - R - 20, Math.max(L + 20, L + i * bw))} y={H - 12} textAnchor="middle" fontSize={fs} fill={C.text3}>{btFmt(lo + i * w, unit)}</text>)}
+  </svg></div>);
+}
+function MxDelta({d, pts, lb, neu}) {
+  if (d == null || !isFinite(d)) return <span style={{fontSize: 12, color: C.text3}}>—</span>;
+  const good = lb ? d < 0 : d > 0, flat = Math.abs(d) < .05;
+  const [bg, fg] = neu || flat ? ["#F1F2F8", "#7A80A6"] : good ? ["rgba(31,157,107,.1)", C.green] : ["rgba(214,69,69,.08)", C.red];
+  return <span style={{fontSize: 12, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: bg, color: fg, whiteSpace: "nowrap"}}>{d >= 0 ? "▲" : "▼"} {Math.abs(d).toFixed(pts ? 1 : 2)}{pts ? " pts" : "%"}</span>;
+}
+function MetricsExplorer({allData, sections}) {
+  const [range, setRange] = useState({p: "l90"});
+  const [sel, setSel] = useState(() => { try { return localStorage.getItem("bt.metrics.sel") || ""; } catch { return ""; } });
+  const [q, setQ] = useState(""), [gran, setGran] = useState("auto"), [navOpen, setNavOpen] = useState(false), [showDays, setShowDays] = useState(false);
+  const idx = useMemo(() => dayIndex(allData), [allData]);
+  const r = useMemo(() => resolveRange(range, idx), [range, idx]);
+  const board = useMemo(() => buildKpiBoard(allData, r, sections), [allData, r, sections]);
+  const has = useMemo(() => { const s = new Set(); for (const d of idx.values()) for (const k in d) if (typeof d[k] === "number" && isFinite(d[k])) s.add(k); return s; }, [idx]);
+  const groups = [...GROUPS, ...board.extraGroups].map(g => ({...g, cards: (board.groups[g.id] || []).filter(c => !c.text && has.has(c.k))})).filter(g => g.cards.length);
+  const all = groups.flatMap(g => g.cards);
+  const c = all.find(x => x.id === sel) || all.find(x => x.k === "weight") || all[0];
+  useEffect(() => { if (c) try { localStorage.setItem("bt.metrics.sel", c.id); } catch {} }, [c?.id]);
+  if (!c) return <div style={{padding: 28, color: C.text3}}>No metrics yet. Sync your iPhone or import data first.</div>;
+
+  // all numbers come from the shared engine, so the iPhone app shows exactly the same
+  const det = metricDetail(idx, c, r, gran);
+  // Same measure from several sources (DexaFit vs Apple Health…)
+  const cmpKey = COMPARABLE.includes(c.k) ? c.k : (sections || []).flatMap(s => s.kpis).find(k => k.key === c.k)?.sameAs;
+  const bySrc = cmpKey ? sourceCompare(idx, sections, cmpKey, SUMMARY_METRICS.find(m => m.key === cmpKey)?.unit || c.unit) : [];
+  const g = det.g, perDay = det.perDay, buckets = det.buckets, vals = det.buckets.map(b => b.v), daily = det.daily, cmp = det.cmp, srcs = det.sources;
+  const days = {length: det.days};
+  const card = {background: "#fff", border: `1px solid ${C.bord}`, borderRadius: 12};
+  const how = det.how;
+  const ql = q.trim().toLowerCase();
+
+  return (
+    <div className="bt-mx" style={{display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", minHeight: "100%", fontFamily: "'Inter',system-ui,sans-serif"}}>
+      <div className={"bt-mxnav" + (navOpen ? " open" : "")} style={{borderRight: `1px solid ${C.bord}`, background: "#fff", padding: "16px 10px 30px", overflowY: "auto", maxHeight: "calc(100vh - 60px)", position: "sticky", top: 0}}>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search metrics" className="bt-date" style={{width: "100%", marginTop: 0, marginBottom: 6}}/>
+        {groups.map(gr => { const cs = gr.cards.filter(x => !ql || x.label.toLowerCase().includes(ql)); if (!cs.length) return null;
+          return <div key={gr.id} style={{marginTop: 12}}>
+            <div style={{fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", color: "#5468FF", padding: "0 8px 4px", textTransform: "uppercase"}}>{gr.name.replace(/^APPLE HEALTH · /, "")}</div>
+            {cs.map(x => <button key={x.id} onClick={() => { setSel(x.id); setNavOpen(false); }}
+              style={{display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 7, padding: "6px 10px", fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                background: x.id === c.id ? "#5468FF" : "transparent", color: x.id === c.id ? "#fff" : C.text2, fontWeight: x.id === c.id ? 600 : 400}}>{x.label}</button>)}
+          </div>; })}
+      </div>
+
+      <div className="bt-pad" style={{padding: "18px 28px 40px", minWidth: 0}}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap"}}>
+          <button className="bt-btn bt-mxburger" onClick={() => setNavOpen(o => !o)}>☰ Metrics</button>
+          <div style={{flex: 1, minWidth: 200}}>
+            <div style={{fontFamily: "'Inter',system-ui,sans-serif", fontSize: 24, fontWeight: 700, color: C.text1, letterSpacing: "-.01em"}}>{c.label}</div>
+            <div style={{fontSize: 12, color: C.text3}}>{SRC_NAME[c.src] || c.src}{c.apps?.length ? " · " + c.apps.join(", ") : ""}</div>
+          </div>
+          <select className="bt-date" style={{width: "auto", marginTop: 0}} value={range.p} onChange={e => setRange({p: e.target.value})}>
+            {DK_PRESETS.filter(p => !["today", "yesterday"].includes(p[0])).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            <option value="all">All time</option></select>
+        </div>
+
+        <div style={{...card, padding: "20px 22px", marginTop: 16}}>
+          <div style={{display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap"}}>
+            <div style={{flex: 1}}>
+              <div style={{fontSize: 12, fontWeight: 600, letterSpacing: ".06em", color: "#5468FF", textTransform: "uppercase"}}>{c.label} · {how}</div>
+              <div style={{fontSize: 36, fontWeight: 800, color: C.text1, letterSpacing: "-.02em", marginTop: 4}}>{c.fmt}</div>
+              <div style={{display: "flex", gap: 8, alignItems: "center", marginTop: 4, fontSize: 13, color: C.text3}}>
+                <MxDelta d={c.delta} pts={c.pts} lb={c.lb} neu={c.neu}/> vs {r.cmpLbl} ({c.prevFmt}) · {fmtSpan(r.a, r.b)}</div>
+            </div>
+            <select className="bt-date" style={{width: "auto", marginTop: 0}} value={gran} onChange={e => setGran(e.target.value)}>
+              <option value="auto">Auto</option><option value="days">Days</option><option value="weeks">Weeks</option><option value="months">Months</option></select>
+          </div>
+          <div style={{marginTop: 14}}><BtBigLine labels={buckets.map(b => b.label)} vals={vals} unit={c.unit}/></div>
+          {perDay && <div style={{fontSize: 12, color: C.text3, marginTop: 4}}>Each point is the daily average for that {g === "weeks" ? "week" : "month"}.</div>}
+        </div>
+
+        {bySrc.length > 1 && <div style={{...card, marginTop: 16, padding: "16px 20px"}}>
+          <div style={{fontSize: 12, fontWeight: 600, letterSpacing: ".06em", color: "#5468FF", textTransform: "uppercase"}}>By source · latest reading</div>
+          <div style={{fontSize: 12.5, color: C.text3, margin: "4px 0 10px"}}>Different devices measure {(SUMMARY_METRICS.find(m => m.key === cmpKey)?.label || c.label).toLowerCase()} differently. Track each one's trend against itself; the gap shows how they compare.</div>
+          {bySrc.map((o, i) => <div key={o.key} style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 14, alignItems: "baseline", padding: "9px 0", borderTop: i ? `1px solid ${C.bord}` : "none"}}>
+            <div style={{minWidth: 0}}>
+              <div style={{fontSize: 14, fontWeight: 600, color: C.text1}}>{o.source}</div>
+              <div style={{fontSize: 12, color: C.text3}}>{o.via !== o.source ? o.via + " · " : ""}{fmtDate(o.date)} · {o.readings} reading{o.readings === 1 ? "" : "s"}</div>
+            </div>
+            <div style={{fontSize: 20, fontWeight: 800, color: C.text1}}>{o.fmt}</div>
+            <div style={{fontSize: 12, fontWeight: 600, color: C.text3, minWidth: 64, textAlign: "right"}}>{i ? o.diffFmt + " vs " + bySrc[0].source.split(",")[0] : "reference"}</div>
+          </div>)}
+        </div>}
+
+        <div style={{...card, marginTop: 16, padding: "18px 10px"}}>
+          <div className="bt-mxcmp" style={{display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", textAlign: "center"}}>
+            {cmp.map(x => <div key={x.l} style={{padding: "4px 6px"}}>
+              <div style={{fontSize: 13, color: C.text3}}>{x.l}</div>
+              <div style={{fontSize: 24, fontWeight: 800, color: C.text1, margin: "6px 0"}}>{btFmt(x.v, c.unit)}</div>
+              {x.l !== "Current" && <MxDelta d={x.d} pts={c.pts} lb={c.lb} neu={c.neu}/>}</div>)}
+          </div>
+          <div style={{fontSize: 12, color: C.text3, textAlign: "center", marginTop: 12}}>Current is the {how} for the 30 days ending {fmtDate(r.b)}; each column compares it with the same 30 days back then.</div>
+        </div>
+
+        <div style={{display: "grid", gap: 16, marginTop: 16}}>
+          {c.mode !== "last" && <div style={{...card, padding: "16px 18px"}}>
+            <div style={{fontWeight: 700, color: C.text1, fontSize: 15}}>{c.label} by day of week</div>
+            <div style={{fontSize: 12, color: C.text3, margin: "2px 0 8px"}}>Your typical {c.mode === "sum" ? "daily total" : "value"} on each weekday, {fmtSpan(r.a, r.b)}. The darkest bar is your best day.</div>
+            <MxWeekday labels={det.weekday.map(w => w.day)} vals={det.weekday.map(w => w.v)} unit={c.unit} lb={c.lb}/>
+          </div>}
+          <div style={{...card, padding: "16px 18px"}}>
+            <div style={{fontWeight: 700, color: C.text1, fontSize: 15}}>Distribution</div>
+            <div style={{fontSize: 12, color: C.text3, margin: "2px 0 8px"}}>How many days landed at each value ({daily.length} days)</div>
+            <MxHistogram values={daily.map(p => p[1])} unit={c.unit}/>
+          </div>
+        </div>
+
+        {srcs.length > 0 && <div style={{...card, marginTop: 16}}>
+          <div style={{padding: "14px 18px", fontWeight: 700, color: C.text1, fontSize: 15, borderBottom: "1px solid #EEF0F6"}}>Sources</div>
+          {srcs.map(([name, n]) => <div key={name} style={{display: "grid", gridTemplateColumns: "minmax(0,1fr) 90px minmax(80px,200px)", gap: 14, alignItems: "center", padding: "10px 18px", borderTop: "1px solid #F1F2F8", fontSize: 13}}>
+            <span style={{fontWeight: 600, color: C.text1}}>{name}</span><span style={{color: C.text2, textAlign: "right"}}>{n} day{n === 1 ? "" : "s"}</span>
+            <div style={{height: 6, background: "#EEF0FF", borderRadius: 3}}><div style={{height: 6, width: `${n / days.length * 100}%`, background: "#5468FF", borderRadius: 3}}/></div></div>)}
+        </div>}
+
+        <div style={{...card, marginTop: 16}}>
+          <button onClick={() => setShowDays(v => !v)} style={{width: "100%", textAlign: "left", border: 0, background: "none", padding: "14px 18px", fontWeight: 700, color: C.text1, fontSize: 15, cursor: "pointer", fontFamily: "inherit", display: "flex"}}>
+            <span style={{flex: 1}}>Daily values</span><span style={{color: C.text3, fontWeight: 400, fontSize: 13}}>{showDays ? "Hide" : `Show ${Math.min(daily.length, 60)} most recent`}</span></button>
+          {showDays && [...daily].reverse().slice(0, 60).map(([s, v]) => <div key={s} style={{display: "flex", justifyContent: "space-between", padding: "8px 18px", borderTop: "1px solid #F1F2F8", fontSize: 13}}>
+            <span style={{color: C.text2}}>{WD[new Date(s + "T12:00:00").getDay()].slice(0, 3)}, {fmtDate(s)}</span><span style={{fontWeight: 600, color: C.text1}}>{btFmt(v, c.unit)}</span></div>)}
+        </div>
+      </div>
+    </div>);
+}
+
+function BtKpiDetail({c, r, rangeLbl, onBack}) {
+  const [view, setView] = useState("trend");
+  const nums = c.text ? [] : c.vals.filter(v => v != null);
+  const tiles = c.text ? [] : [
+    ["Period high", nums.length ? Math.max(...nums) : null],
+    ["Period low", nums.length ? Math.min(...nums) : null],
+    ["Average", nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null],
+    ["Period total", c.mode === "sum" && nums.length ? nums.reduce((a, b) => a + b, 0) : null],
+  ].filter(x => x[1] != null);
+  const rows = [...c.curPts].reverse();
+  const how = c.text ? "latest entry" : c.mode === "sum" ? "total for the range" : c.mode === "avg" ? "average of the days logged" : "latest reading in the range";
+  return (
+    <div style={{padding:"0 28px 24px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <button onClick={onBack} style={{border:0,background:"none",display:"flex",alignItems:"center",gap:"6px",color:"#4A4F6E",fontSize:"13px",cursor:"pointer",margin:"16px 0 12px",padding:0,fontFamily:"inherit"}}><IcBack/> All KPIs</button>
+      <div className="bt-card" style={{padding:"20px 22px"}}>
+        <div className="bt-eyebrow">{c.label}</div>
+        <div style={{display:"flex",alignItems:"baseline",gap:"10px",marginTop:"6px",flexWrap:"wrap"}}>
+          <span className="bt-num" style={{fontSize:"38px",lineHeight:1.1,color:C.text1}}>{c.fmt}</span>
+          {c.delta != null && <BtDelta d={c.delta} pts={c.pts} lb={c.lb} neu={c.neu}/>}
+        </div>
+        <div style={{fontSize:"12.5px",color:C.text3,marginTop:"2px"}}>{c.sub}{c.delta != null ? ` · vs ${r.cmpLbl} (${c.prevFmt})` : ""}</div>
+        <div style={{fontSize:"12px",color:C.text3,marginTop:"4px"}}>Source: {c.apps?.length ? c.apps.join(", ") + " (via Apple Health)" : SRC_NAME[c.src] || c.src} · {how} · {rangeLbl}</div>
+        {!c.text && <div style={{display:"flex",gap:"6px",marginTop:"14px"}}>
+          {[["trend","Trend"],["bars","Bars"],["hist","Histogram"]].map(([k, l]) => (
+            <button key={k} className="bt-btn" onClick={() => setView(k)}
+              style={{height:"30px",fontSize:"12.5px",...(view === k ? {background:C.text1,borderColor:C.text1,color:"#fff"} : {})}}>{l}</button>))}
+        </div>}
+        {!c.text && <div style={{marginTop:"10px"}}>
+          {view === "trend" ? <BtBigChart labels={c.labels} vals={c.vals} unit={c.unit}/>
+            : view === "bars" ? <BtBars labels={c.labels} vals={c.vals} unit={c.unit}/>
+            : <BtHistogram values={c.curPts.map(p => p[1])} unit={c.unit}/>}
+        </div>}
+      </div>
+      {tiles.length > 0 && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"12px",marginTop:"12px"}}>
+          {tiles.map(([l, v]) => (
+            <div key={l} className="bt-card" style={{padding:"12px 14px",borderRadius:"12px"}}>
+              <div className="bt-eyebrow">{l}</div>
+              <div className="bt-num" style={{fontSize:"22px",marginTop:"4px",color:C.text1}}>{btFmt(v, c.unit)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="bt-card" style={{marginTop:"12px",overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:"1px solid #EEF0F6"}}>
+          <div className="bt-eyebrow" style={{color:C.text1}}>History · {c.label}</div>
+          <div style={{fontSize:"12px",color:C.text3,marginTop:"2px"}}>Newest first · {rows.length} day{rows.length === 1 ? "" : "s"} logged · {rangeLbl}</div>
+        </div>
+        {!rows.length ? <div style={{padding:"18px",fontSize:"13px",color:C.text3}}>No entries in this range.</div> : (
+          <div style={{maxHeight:"520px",overflowY:"auto"}}>
+            {rows.map(([s, v], i) => {
+              const nxt = rows[i + 1]?.[1];
+              const chg = typeof v === "number" && typeof nxt === "number" ? v - nxt : null;
+              const good = chg != null && (c.lb ? chg < 0 : chg > 0), bad = chg != null && (c.lb ? chg > 0 : chg < 0);
+              return (
+                <div key={s} style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) minmax(90px,1fr) 110px",alignItems:"center",gap:"10px",padding:"9px 18px",borderBottom:"1px solid #EEF0F6"}}>
+                  <span style={{fontSize:"13px",color:C.text2}}>{new Date(s + "T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
+                  <span className="bt-num" style={{fontSize:"15px",color:C.text1}}>{typeof v === "number" ? btFmt(v, c.unit) : String(v)}</span>
+                  <span style={{fontSize:"11.5px",fontWeight:600,textAlign:"right",color:good?C.green:bad?C.red:C.text3}}>{chg == null ? "" : Math.abs(chg) < 0.05 ? "no change" : `${chg > 0 ? "+" : "−"}${btFmt(Math.abs(chg), c.unit)}`}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── ASK AI: chat with Claude about the whole health history (server /ask, streamed) ───
+const ASK_STARTERS = [
+  "What's the single biggest thing holding back my body composition right now?",
+  "How has my sleep, HRV and resting heart rate trended this year, and what's driving it?",
+  "Create a Bloodwork section that tracks LDL, HbA1c, testosterone and vitamin D from my lab results.",
+  "Which habits in my data line up with my best recovery days?",
+  "Compare this month to my best month ever. What was different?",
+  "Build me a metric for protein per pound of body weight, and alert me when my 7-day resting heart rate goes above 60.",
+  "Set a goal to reach 15% body fat by June and tell me if I'm on track.",
+];
+function mdHtml(t) { return { __html: DOMPurify.sanitize(marked.parse(t || "", { gfm: true, breaks: true })) }; }
+function AskAI({apiURL, apiSecret, onSections}) {
+  const [msgs, setMsgs] = useState(() => { try { return JSON.parse(localStorage.getItem("bt.ask.history")) || []; } catch { return []; } });
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [file, setFile] = useState(null), [fileErr, setFileErr] = useState("");
+  const endRef = useRef(null), abortRef = useRef(null), attachRef = useRef(null);
+  useEffect(() => { try { localStorage.setItem("bt.ask.history", JSON.stringify(msgs.slice(-40))); } catch {} }, [msgs]);
+  useEffect(() => { endRef.current?.scrollIntoView({block: "end"}); }, [msgs, status]);
+  // Weekly review (written Sunday evenings; or on demand)
+  const [review, setReview] = useState(null), [revBusy, setRevBusy] = useState(false), [revErr, setRevErr] = useState(""), [revOpen, setRevOpen] = useState(true);
+  const apiBase = (apiURL || "").replace(/\/sync\/?$/, "");
+  useEffect(() => { fetch(`${apiBase}/reviews`, {headers: {"x-api-secret": apiSecret}}).then(r => r.ok ? r.json() : null).then(j => j && setReview(j.reviews?.[0] || false)).catch(() => {}); }, [apiBase]);
+  const runReview = async () => {
+    setRevBusy(true); setRevErr("");
+    try { const r = await fetch(`${apiBase}/reviews/run`, {method: "POST", headers: {"Content-Type": "application/json", "x-api-secret": apiSecret}, body: JSON.stringify({force: !!review})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Error ${r.status}`); setReview(j.review); setRevOpen(true); }
+    catch (e) { setRevErr(e.message); }
+    setRevBusy(false);
+  };
+
+  const ask = async (text) => {
+    const att = text == null ? file : null;
+    const q = (text ?? draft).trim() || (att ? `Here's my ${att.filename}. Add it to the right KPI section (create one if needed) and tell me the key results.` : ""); if (!q || busy) return;
+    const convo = [...msgs, {role: "user", content: q, ...(att ? {file: att.filename} : {})}];
+    setMsgs([...convo, {role: "assistant", content: ""}]); setDraft(""); setFile(null); setBusy(true); setStatus(att ? `Reading ${att.filename}…` : "Reading your data…");
+    const ctrl = new AbortController(); abortRef.current = ctrl;
+    let answer = "";
+    const put = (t, err) => setMsgs(m => { const n = [...m]; n[n.length - 1] = {...n[n.length - 1], role: "assistant", content: t, error: err}; return n; });
+    const addCard = (c) => setMsgs(m => { const n = [...m], last = n[n.length - 1]; n[n.length - 1] = {...last, cards: [...(last.cards || []), c]}; return n; });
+    try {
+      const r = await fetch(`${(apiURL || "").replace(/\/sync\/?$/, "")}/ask`, {method: "POST", signal: ctrl.signal,
+        headers: {"Content-Type": "application/json", "x-api-secret": apiSecret}, body: JSON.stringify({messages: convo.map(({role, content}) => ({role, content})), ...(att ? {attachment: att} : {})})});
+      if (!r.ok || !r.body) throw new Error(r.status === 401 ? "Access key rejected." : `Server error ${r.status}`);
+      const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+      for (;;) {
+        const {value, done} = await reader.read(); if (done) break;
+        buf += dec.decode(value, {stream: true});
+        let i; while ((i = buf.indexOf("\n\n")) >= 0) {
+          const line = buf.slice(0, i).replace(/^data: /, ""); buf = buf.slice(i + 2);
+          let ev; try { ev = JSON.parse(line); } catch { continue; }
+          if (ev.type === "text") { answer += ev.text; setStatus(""); put(answer); }
+          else if (ev.type === "status") setStatus(ev.text);
+          else if (ev.type === "sections") onSections?.();
+          else if (ev.type === "change" || ev.type === "approve") { addCard({kind: ev.type, id: ev.id, summary: ev.summary}); onSections?.(); }
+          else if (ev.type === "error") { answer += (answer ? "\n\n" : "") + "⚠ " + ev.text; put(answer, true); if (ev.code === "credits_needed") addCard({kind: "credits", id: "credits", summary: ""}); }
+        }
+      }
+    } catch (e) { if (e.name !== "AbortError") { answer += (answer ? "\n\n" : "") + "⚠ " + e.message; put(answer, true); } }
+    setBusy(false); setStatus("");
+  };
+
+  const card = {background: "#fff", border: `1px solid ${C.bord}`, borderRadius: "12px"};
+  // Undo a change the agent made / approve a removal it proposed
+  const act = async (mi, c, what) => {
+    const base = (apiURL || "").replace(/\/sync\/?$/, ""), H = {"Content-Type": "application/json", "x-api-secret": apiSecret};
+    const set = (patch) => setMsgs(m => m.map((x, i) => i !== mi ? x : {...x, cards: x.cards.map(y => y.id === c.id ? {...y, ...patch} : y)}));
+    set({busy: true});
+    try {
+      if (what === "credits") {
+        const r = await fetch(`${base}/usage/request-credits`, {method: "POST", headers: H, body: "{}"}); const j = await r.json();
+        return set({busy: false, state: j.message || "Request sent."});
+      }
+      const r = await fetch(`${base}/builder/${what === "undo" ? "undo" : "approve"}/${c.id}`, {method: "POST", headers: H, body: JSON.stringify(what === "deny" ? {deny: true} : {})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      set({busy: false, state: what === "undo" ? "undone" : what === "deny" ? "cancelled" : "approved", undoId: j.change_id});
+      onSections?.();
+    } catch (e) { set({busy: false, err: e.message}); }
+  };
+  const Cards = ({m, mi}) => !m.cards?.length ? null : (
+    <div style={{display: "flex", flexDirection: "column", gap: "6px", marginTop: m.content ? "12px" : 0}}>
+      {m.cards.map(c => c.kind === "credits" ? (
+        <div key={c.id} style={{display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px", borderRadius: "9px", fontSize: "12.5px", background: "rgba(20,150,140,.07)", border: "1px solid rgba(20,150,140,.3)"}}>
+          <span style={{flex: 1, color: C.text1}}>{c.state || "Need more AI this month? Credits are coming soon; tell us and we'll top you up."}</span>
+          {!c.state && <button className="bt-btn" disabled={c.busy} onClick={() => act(mi, c, "credits")} style={{padding: "2px 10px", fontSize: "12px", background: C.teal, borderColor: C.teal, color: "#fff"}}>Add credits</button>}
+        </div>
+      ) : (
+        <div key={c.id} style={{display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", borderRadius: "9px", fontSize: "12.5px",
+          background: c.kind === "approve" && !c.state ? "rgba(232,163,23,.08)" : "#F6F8FB", border: `1px solid ${c.kind === "approve" && !c.state ? "rgba(232,163,23,.35)" : C.bord}`}}>
+          <span style={{flex: 1, color: C.text1}}>{c.kind === "approve" && !c.state ? "Needs your OK: " : c.state === "undone" ? "↶ Undone: " : "✓ "}{c.summary}{c.err && <span style={{color: C.red}}> · {c.err}</span>}</span>
+          {c.kind === "change" && !c.state && <button className="bt-btn" disabled={c.busy} onClick={() => act(mi, c, "undo")} style={{padding: "2px 10px", fontSize: "12px"}}>Undo</button>}
+          {c.kind === "approve" && !c.state && <>
+            <button className="bt-btn" disabled={c.busy} onClick={() => act(mi, c, "approve")} style={{padding: "2px 10px", fontSize: "12px", background: C.teal, borderColor: C.teal, color: "#fff"}}>Approve</button>
+            <button className="bt-btn" disabled={c.busy} onClick={() => act(mi, c, "deny")} style={{padding: "2px 10px", fontSize: "12px"}}>Cancel</button></>}
+          {c.state === "approved" && <span style={{color: C.text3}}>Done</span>}
+          {c.state === "cancelled" && <span style={{color: C.text3}}>Cancelled</span>}
+        </div>))}
+    </div>);
+  return (
+    <div style={{padding: "18px 28px 28px", maxWidth: "900px", margin: "0 auto", fontFamily: "'Inter',system-ui,sans-serif", display: "flex", flexDirection: "column", gap: "14px"}}>
+      <div style={{display: "flex", alignItems: "flex-end", gap: "12px"}}>
+        <div style={{flex: 1}}>
+          <div style={{fontFamily: "'Inter',system-ui,sans-serif", fontSize: "18px", fontWeight: 700, color: C.text1}}>Ask AI</div>
+          <div style={{fontSize: "12.5px", color: C.text3, marginTop: "2px"}}>Ask anything about your health. Claude reads your full history (every Apple Health metric back to 2015, nutrition, training, body scans) and current research before answering.</div>
+        </div>
+        {msgs.length > 0 && <button className="bt-btn" disabled={busy} onClick={() => setMsgs([])}>New chat</button>}
+      </div>
+
+      {msgs.length === 0 && review !== null && (
+        <div style={{...card, padding: "16px 20px", borderColor: "rgba(20,150,140,.3)"}}>
+          <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+            <div style={{flex: 1, fontSize: "14px", fontWeight: 700, color: C.text1, cursor: review ? "pointer" : "default"}} onClick={() => setRevOpen(o => !o)}>
+              Weekly review {review && <span style={{fontWeight: 500, color: C.text3, fontSize: "12.5px"}}>· {fmtDate(review.week)} – {fmtDate(review.end)}</span>}</div>
+            <button className="bt-btn" disabled={revBusy} onClick={runReview} style={{padding: "2px 10px", fontSize: "12px"}}>{revBusy ? "Writing… (about a minute)" : review ? "Rewrite" : "Write my review"}</button>
+          </div>
+          {revErr && <div style={{fontSize: "12.5px", color: C.red, marginTop: "6px"}}>⚠ {revErr}</div>}
+          {!review && !revErr && <div style={{fontSize: "12.5px", color: C.text3, marginTop: "4px"}}>Every Sunday evening: your week vs the 4 weeks before, what to watch, and 3 actions for next week.</div>}
+          {review && revOpen && <div className="bt-md" style={{marginTop: "8px"}} dangerouslySetInnerHTML={mdHtml(review.text)}/>}
+        </div>
+      )}
+      {msgs.length === 0 && (
+        <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(260px,100%),1fr))", gap: "10px"}}>
+          {ASK_STARTERS.map(q => <button key={q} onClick={() => ask(q)} className="bt-menuitem"
+            style={{...card, padding: "14px 16px", textAlign: "left", fontSize: "13.5px", color: C.text1, lineHeight: 1.45, cursor: "pointer", alignItems: "flex-start"}}>{q}</button>)}
+        </div>
+      )}
+
+      {msgs.map((m, i) => m.role === "user"
+        ? <div key={i} style={{alignSelf: "flex-end", maxWidth: "80%", background: C.text1, color: "#fff", borderRadius: "14px 14px 4px 14px", padding: "10px 14px", fontSize: "14px", lineHeight: 1.5, whiteSpace: "pre-wrap"}}>
+            {m.file && <div style={{fontSize: "12px", opacity: .75, marginBottom: "4px"}}>📎 {m.file}</div>}{m.content}</div>
+        : <div key={i} style={{...card, padding: "16px 20px", borderColor: m.error ? "rgba(214,69,69,.35)" : C.bord}}>
+            {m.content ? <div className="bt-md" dangerouslySetInnerHTML={mdHtml(m.content)}/>
+              : !m.cards?.length && <div style={{fontSize: "13px", color: C.text3}}>{status || "Thinking…"}</div>}
+            <Cards m={m} mi={i}/>
+            {busy && i === msgs.length - 1 && m.content && status && <div style={{fontSize: "12px", color: C.text3, marginTop: "8px"}}>{status}</div>}
+          </div>)}
+      <div ref={endRef}/>
+
+      {(file || fileErr) && <div style={{alignSelf: "flex-start", fontSize: "12.5px", display: "flex", gap: "8px", alignItems: "center", color: fileErr ? C.red : C.text2}}>
+        {fileErr ? "⚠ " + fileErr : <>📎 {file.filename} <button type="button" onClick={() => setFile(null)} style={{border: 0, background: "none", color: C.text3, cursor: "pointer", fontFamily: "inherit"}}>Remove</button></>}</div>}
+      <form onSubmit={e => { e.preventDefault(); ask(); }} style={{...card, display: "flex", gap: "8px", padding: "8px", position: "sticky", bottom: "8px", boxShadow: "0 6px 24px rgba(0,0,0,.06)"}}>
+        <input ref={attachRef} type="file" accept={UPLOAD_ACCEPT} style={{display: "none"}} onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+          try { setFile(await readUpload(f)); setFileErr(""); } catch (err) { setFile(null); setFileErr(err.message); } }}/>
+        <button type="button" className="bt-btn" title="Attach a report, screenshot or CSV" disabled={busy} onClick={() => attachRef.current?.click()} style={{alignSelf: "flex-end", padding: "0 10px"}}>📎</button>
+        <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2} placeholder="Ask about your health, or attach a DEXA / lab report with 📎…"
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } }}
+          style={{flex: 1, border: 0, outline: 0, resize: "none", font: "14px/1.5 inherit", fontFamily: "inherit", padding: "6px 8px", color: C.text1, background: "transparent"}}/>
+        {busy ? <button type="button" className="bt-btn" onClick={() => abortRef.current?.abort()}>Stop</button>
+          : <button type="submit" className="bt-btn" disabled={!draft.trim() && !file} style={{background: C.teal, borderColor: C.teal, color: "#fff", alignSelf: "flex-end"}}>Ask</button>}
+      </form>
+    </div>
+  );
+}
+
+// ─── AUTOMATIONS: what feeds BodyData, file imports, and export reminders ───
+const REMINDER_PRESETS = [
+  {app: "Fitbod", openURL: "fitbod://", note: "Sets, reps and weights. In Fitbod: Log → ⋯ → Export workout data → Share → BodyData."},
+  {app: "MyFitnessPal", openURL: "mfp://", note: "Only needed if nutrition stops showing up. In MyFitnessPal: More → Settings → Export data."},
+  {app: "Hume", openURL: "", note: "Segmental body scans. Export the scan CSV and share it to BodyData."},
+];
+const WEEKDAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+// PDFs and images go up as base64 (AI reads them); CSV/JSON/text as text
+const DOC_RE = /\.(pdf|png|jpe?g|webp|gif)$/i;
+const readUpload = (f) => new Promise((res, rej) => {
+  const r = new FileReader(); r.onerror = () => rej(new Error("Couldn't read the file"));
+  if (DOC_RE.test(f.name) || /^(application\/pdf|image\/)/.test(f.type)) {
+    if (f.size > 15e6) return rej(new Error("That file is over 15 MB. Export a smaller PDF or a screenshot."));
+    if (/heic|heif/i.test(f.type + f.name)) return rej(new Error("HEIC photos aren't supported. Take a screenshot (PNG) instead."));
+    r.onload = () => res({filename: f.name, mediaType: f.type || (/\.pdf$/i.test(f.name) ? "application/pdf" : "image/png"), data: String(r.result).split(",")[1]});
+    r.readAsDataURL(f);
+  } else { r.onload = () => res({filename: f.name, text: String(r.result)}); r.readAsText(f); }
+});
+// Long uploads run as background jobs on the server: post with async, then poll until done
+async function postJob(url, H, body, onWait) {
+  const r = await fetch(url, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify({...body, async: true})});
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || `Server error ${r.status}`);
+  if (!j.job) return j;
+  const base = url.replace(/\/sections\/.*$/, "");
+  for (let t = 0; t < 600; t++) {   // up to 10 minutes
+    await new Promise(res => setTimeout(res, t < 10 ? 1500 : 3000));
+    const q = await fetch(`${base}/jobs/${j.job}`, {headers: H}).then(x => x.json()).catch(() => null);
+    if (q?.status === "done") return q.result;
+    if (q?.status === "failed") throw new Error(q.error || "Import failed");
+    onWait?.(t);
+  }
+  throw new Error("Still working on it. Check back in a few minutes.");
+}
+const UPLOAD_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.csv,.tsv,.txt,.json,application/pdf,image/*,text/csv,application/json";
+const SEC_TYPE_LABEL = {existing: "Existing metrics", manual: "File upload", api: "API", mcp: "MCP server", agent: "BodyData Agent", derived: "Calculated"};
+// One-tap OAuth connections (Withings, WHOOP): sign in at the service, data syncs hourly
+function ConnectionsCard({base, H, onSections, onData, card, h2}) {
+  const [list, setList] = useState(null), [busy, setBusy] = useState(""), [msg, setMsg] = useState(() => {
+    const q = new URLSearchParams(window.location.search); if (!q.get("connected")) return null;
+    const m = {ok: q.get("ok") === "1", text: q.get("msg") || ""}; window.history.replaceState(null, "", window.location.pathname); return m; });
+  const load = () => fetch(`${base}/connect`, {headers: H}).then(r => r.ok ? r.json() : null).then(j => j && setList(j.providers)).catch(() => {});
+  useEffect(() => { load(); if (msg?.ok) { onSections?.(); onData?.(); } }, [base]);
+  const post = async (p, path, body, label) => {
+    setBusy(p + path); setMsg(null);
+    try {
+      const r = await fetch(`${base}/connect/${p}/${path}`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      if (path === "start") { window.location.href = j.url; return; }
+      setMsg({ok: true, text: label(j)}); load(); onSections?.(); onData?.();
+    } catch (e) { setMsg({ok: false, text: e.message}); }
+    setBusy("");
+  };
+  if (!list) return null;
+  const small = {padding: "3px 10px", fontSize: "12px"};
+  return (
+    <div style={card}>
+      <div style={h2}>Connected services</div>
+      <div style={{fontSize: "12.5px", color: C.text3, margin: "2px 0 8px"}}>Sign in once at the service. BodyData pulls new data every hour; your password never reaches BodyData.</div>
+      {msg && <div style={{fontSize: "12.5px", color: msg.ok ? C.green : C.red, marginBottom: "6px"}}>{msg.ok ? "✓ " : "⚠ "}{msg.text}</div>}
+      {list.map(p => (
+        <div key={p.id} style={{display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderTop: "1px solid #EEF0F6", flexWrap: "wrap"}}>
+          <div style={{flex: "1 1 240px"}}>
+            <div style={{fontSize: "13.5px", fontWeight: 600, color: C.text1}}>{p.name} {p.connected && <span style={{fontSize: "11.5px", fontWeight: 500, color: p.error ? C.red : C.green}}>· {p.error ? "needs attention" : "connected"}</span>}</div>
+            <div style={{fontSize: "12px", color: C.text3}}>{p.error || (p.connected ? `Last sync ${p.lastSync ? new Date(p.lastSync).toLocaleString("en-US", {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}) : "pending"}${p.newest ? ` · data through ${fmtDate(p.newest)}` : ""}` : p.about)}</div>
+            {p.connected && p.ai === "optin" && <label style={{fontSize: "12px", color: C.text2, display: "flex", gap: "6px", alignItems: "center", marginTop: "4px"}}>
+              <input type="checkbox" checked={p.aiAllowed} onChange={e => post(p.id, "ai", {allow: e.target.checked}, j => j.aiAllowed ? `Ask AI can now read your ${p.name} data.` : `Ask AI won't read your ${p.name} data.`)}/>
+              Let Ask AI read my {p.name} data ({p.name}'s terms need your OK; it's never used to train AI)</label>}
+          </div>
+          {!p.available ? <span style={{fontSize: "12px", color: C.text3}}>Coming soon</span>
+            : !p.connected || p.error ? <button className="bt-btn" disabled={!!busy} style={{...small, background: C.teal, borderColor: C.teal, color: "#fff"}} onClick={() => post(p.id, "start", {}, () => "")}>{p.connected ? "Reconnect" : "Connect"}</button>
+            : <>
+              <button className="bt-btn" disabled={!!busy} style={small} onClick={() => post(p.id, "sync", {}, j => `${p.name}: ${j.stored} day${j.stored === 1 ? "" : "s"} updated.`)}>{busy === p.id + "sync" ? "Syncing…" : "Sync now"}</button>
+              <button className="bt-btn" disabled={!!busy} style={small} onClick={() => { if (confirm(`Disconnect ${p.name}? Data already imported stays.`)) post(p.id, "disconnect", {}, () => `${p.name} disconnected.`); }}>Disconnect</button>
+            </>}
+        </div>))}
+    </div>
+  );
+}
+// Goals, alerts and the agent's change log (each change can be undone)
+function BuilderCard({base, H, sections, onSections, card, h2}) {
+  const [st, setSt] = useState(null), [err, setErr] = useState("");
+  const load = () => fetch(`${base}/builder/state`, {headers: H}).then(r => r.ok ? r.json() : null).then(j => j && setSt(j)).catch(() => {});
+  useEffect(() => { load(); }, [base, sections]);
+  const post = async (path, body) => {
+    setErr("");
+    try { const r = await fetch(`${base}${path}`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Error ${r.status}`); load(); onSections?.(); }
+    catch (e) { setErr(e.message); }
+  };
+  if (!st || (!st.goals.length && !st.alerts.length && !st.changes.length && !st.pending.length)) return null;
+  const row = {display: "flex", alignItems: "center", gap: "10px", padding: "9px 0", borderTop: "1px solid #EEF0F6", fontSize: "13px"};
+  const small = {padding: "2px 10px", fontSize: "12px"};
+  return (
+    <div style={card}>
+      <div style={h2}>Goals, alerts &amp; changes</div>
+      <div style={{fontSize: "12.5px", color: C.text3, margin: "2px 0 8px"}}>Ask AI builds these for you. Every change can be undone.</div>
+      {err && <div style={{fontSize: "12.5px", color: C.red}}>⚠ {err}</div>}
+      {st.pending.map(p => <div key={p.id} style={row}><span style={{flex: 1}}>Needs your OK: {p.summary}</span>
+        <button className="bt-btn" style={{...small, background: C.teal, borderColor: C.teal, color: "#fff"}} onClick={() => post(`/builder/approve/${p.id}`)}>Approve</button>
+        <button className="bt-btn" style={small} onClick={() => post(`/builder/approve/${p.id}`, {deny: true})}>Cancel</button></div>)}
+      {st.goals.map(g => <div key={g.id} style={row}>
+        <span style={{flex: 1}}><b style={{fontWeight: 600}}>{g.label}</b> <span style={{color: C.text3}}>· now {g.current ? btFmt(g.current.value) : "no data"} → {btFmt(g.target)}{g.by ? ` by ${fmtDate(g.by)}` : ""}</span></span>
+        <span style={{width: "90px", height: "6px", borderRadius: "3px", background: "#EEF0F6", overflow: "hidden"}}><span style={{display: "block", height: "100%", width: `${g.progress || 0}%`, background: g.onTrack === false ? C.red : C.teal}}/></span>
+        <span style={{fontSize: "12px", width: "86px", color: g.reached ? C.green : g.onTrack === false ? C.red : C.text3}}>{g.reached ? "Reached" : g.onTrack === false ? "Off track" : g.onTrack ? "On track" : `${g.progress || 0}%`}</span>
+        <button className="bt-btn" style={small} onClick={() => post(`/builder/goal/${g.id}/delete`)}>Remove</button></div>)}
+      {st.alerts.map(a => <div key={a.id} style={row}>
+        <span style={{flex: 1}}><b style={{fontWeight: 600}}>{a.label}</b> <span style={{color: C.text3}}>· {a.basis === "avg7" ? "7-day avg" : "daily"} {a.op} {btFmt(a.value)} · now {a.current ? btFmt(a.current.value) : "no data"}</span></span>
+        {a.triggered && <span style={{fontSize: "12px", color: C.red}}>Triggered</span>}
+        <button className="bt-btn" style={small} onClick={() => post(`/builder/alert/${a.id}/delete`)}>Remove</button></div>)}
+      {st.changes.length > 0 && <details style={{marginTop: "8px"}}><summary style={{fontSize: "12.5px", color: C.text2, cursor: "pointer"}}>Recent changes ({st.changes.length})</summary>
+        {st.changes.map(c => <div key={c.id} style={row}><span style={{flex: 1, color: c.undone ? C.text3 : C.text1, textDecoration: c.undone ? "line-through" : "none"}}>{c.summary}</span>
+          <span style={{fontSize: "12px", color: C.text3}}>{new Date(c.at).toLocaleDateString("en-US", {month: "short", day: "numeric"})}</span>
+          {!c.undone && <button className="bt-btn" style={small} onClick={() => post(`/builder/undo/${c.id}`)}>Undo</button>}</div>)}
+      </details>}
+    </div>
+  );
+}
+function SectionsCard({base, H, sections, onSections, onData, card, h2}) {
+  const [open, setOpen] = useState(null), [token, setToken] = useState(""), [msg, setMsg] = useState({}), [busy, setBusy] = useState("");
+  const fileRefs = useRef({}), newRef = useRef();
+  const [newMsg, setNewMsg] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  useEffect(() => { fetch(`${base}/sections/templates`, {headers: H}).then(r => r.ok ? r.json() : null).then(j => j && setTemplates(j.templates)).catch(() => {}); }, [base]);
+  const fromTemplate = async (id) => {
+    if (!id) return; setBusy("new"); setNewMsg({text: "Setting it up…"});
+    try {
+      const r = await fetch(`${base}/sections/from-template`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify({id})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Server error ${r.status}`);
+      const t = templates.find(x => x.id === id);
+      setNewMsg({ok: true, text: j.existed ? `“${j.section.name}” already exists.` : `Added “${j.section.name}”. ${t?.type === "agent" ? "Open Agent setup below to sign in once; it then runs on schedule." : "Upload or share a report to fill it in."}`}); onSections?.();
+    } catch (e) { setNewMsg({ok: false, text: e.message}); }
+    setBusy("");
+  };
+  // One or many reports at once (e.g. DEXA + RMR + VO2 PDFs): each is routed to the matching section, or a new one
+  const fromFiles = async (list) => {
+    const files = [...(list || [])]; if (!files.length) return; setBusy("new");
+    const done = [];
+    for (const [i, f] of files.entries()) {
+      setNewMsg({text: `Reading ${f.name}${files.length > 1 ? ` (${i + 1} of ${files.length})` : ""}… reports take 20–60 seconds each`});
+      try {
+        const j = await postJob(`${base}/sections/from-file`, H, await readUpload(f));
+        done.push(j.existed ? `Added to “${j.name}”${j.added ? ` (+${j.added} new KPI${j.added === 1 ? "" : "s"})` : ""}` : `Created “${j.name}” with ${j.kpis} KPIs`);
+        onSections?.(); onData?.();
+      } catch (e) { done.push(`⚠ ${f.name}: ${e.message}`); }
+    }
+    setNewMsg({ok: !done.some(d => d.startsWith("⚠")), text: done.join(" · ") + ". It's on your KPI board now."});
+    setBusy("");
+  };
+  const [drag, setDrag] = useState(false);
+  const call = async (id, path, body, label) => {
+    setBusy(id + path); setMsg(m => ({...m, [id]: {text: label + "…"}}));
+    try {
+      let j;
+      if (path === "import") j = await postJob(`${base}/sections/${id}/import`, H, body || {});
+      else { const r = await fetch(`${base}/sections/${id}/${path}`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+        j = await r.json(); if (!r.ok) throw new Error(j.error || `Server error ${r.status}`); }
+      setMsg(m => ({...m, [id]: {ok: true, text: path === "secret" ? "Token saved." : path === "delete" ? "Deleted." : `${j.stored} date${j.stored === 1 ? "" : "s"} updated${j.added ? `, ${j.added} new KPI${j.added === 1 ? "" : "s"}` : ""}${j.newest ? ` · latest ${fmtDate(j.newest)}` : ""}.`}}));
+      if (path !== "secret") onData?.();
+      onSections?.();
+    } catch (e) { setMsg(m => ({...m, [id]: {ok: false, text: e.message}})); }
+    setBusy("");
+  };
+  const tag = {fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px", background: "#F1F2F8", color: C.text2, whiteSpace: "nowrap"};
+  return (
+    <div style={{...card, ...(drag ? {outline: `2px dashed ${C.teal}`, outlineOffset: "-6px"} : {})}}
+      onDragOver={e => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); setDrag(true); } }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => { e.preventDefault(); setDrag(false); if (!busy) fromFiles(e.dataTransfer.files); }}>
+      <div style={{display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap"}}>
+        <div style={{...h2, flex: 1}}>Custom KPI sections</div>
+        <input ref={newRef} type="file" multiple accept={UPLOAD_ACCEPT} style={{display: "none"}} onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ""; fromFiles(fs); }}/>
+        {templates.length > 0 && <select className="bt-date" style={{width: "auto", marginTop: 0}} value="" disabled={!!busy} onChange={e => fromTemplate(e.target.value)}>
+          <option value="">+ Add an app…</option>
+          {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.type === "agent" ? " (agent)" : ""}</option>)}
+        </select>}
+        <button className="bt-btn" disabled={!!busy} onClick={() => newRef.current?.click()} style={{background: C.teal, borderColor: C.teal, color: "#fff"}}>{busy === "new" ? "Reading…" : "Upload reports"}</button>
+      </div>
+      <div style={{fontSize: "12.5px", color: C.text3, margin: "4px 0 12px", lineHeight: 1.5}}>
+        Drag in or upload one or more reports: DEXA scans, RMR and VO2 max tests, Function Health or other lab PDFs, InBody printouts, screenshots or CSVs. AI creates a KPI for every result and fills in each date it finds. Next time, just upload the new report: it's added to the matching section automatically so you can track it over time. You can also attach reports in Ask AI, or ask it to connect an app's API, MCP server or the BodyData Agent.
+      </div>
+      {newMsg && <div style={{fontSize: "12.5px", fontWeight: 600, marginBottom: "10px", color: newMsg.ok === false ? C.red : newMsg.ok ? C.green : C.text3}}>{newMsg.ok === false ? "⚠ " : newMsg.ok ? "✓ " : ""}{newMsg.text}</div>}
+      {!sections.length && <div style={{fontSize: "13px", color: C.text3}}>No custom sections yet.</div>}
+      {sections.map((s, i) => {
+        const t = s.source?.type, m = msg[s.id], st = s.lastStatus;
+        return (
+          <div key={s.id} style={{padding: "12px 0", borderTop: i ? "1px solid #EEF0F6" : 0}}>
+            <div style={{display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap"}}>
+              <div style={{fontWeight: 700, fontSize: "14px", color: C.text1, flex: "1 1 160px"}}>{s.name}{s.source?.app && <span style={{fontWeight: 400, color: C.text3}}> · {s.source.app}</span>}</div>
+              <span style={tag}>{SEC_TYPE_LABEL[t] || t}</span>
+              {s.schedule !== "none" && <span style={tag}>{s.schedule}</span>}
+              {(t === "api" || t === "mcp") && <span style={{...tag, background: s.connected ? "rgba(31,157,107,.1)" : "#FFF6E5", color: s.connected ? C.green : "#9A6700"}}>{s.connected ? "Connected" : t === "api" ? "Needs token" : "No token"}</span>}
+            </div>
+            <div style={{fontSize: "12.5px", color: C.text2, marginTop: "4px"}}>{s.kpis.map(k => k.label + (k.direction === "down" ? " ↓" : "")).join(" · ")}</div>
+            {st && <div style={{fontSize: "12px", marginTop: "4px", color: st.ok ? C.text3 : C.red}}>{st.ok ? "✓ " : "⚠ "}{st.text}{s.lastRun ? ` · ${new Date(s.lastRun).toLocaleString()}` : ""}</div>}
+            <div style={{display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px"}}>
+              {(t === "api" || t === "mcp") && <>
+                <button className="bt-btn" onClick={() => { setOpen(open === s.id + "c" ? null : s.id + "c"); setToken(""); }}>{s.connected ? "Change token" : "Connect"}</button>
+                <button className="bt-btn" disabled={!!busy} onClick={() => call(s.id, "run", {}, "Pulling data")}>{busy === s.id + "run" ? "Pulling…" : "Run now"}</button>
+              </>}
+              {t !== "existing" && <>
+                <input type="file" accept={UPLOAD_ACCEPT} style={{display: "none"}} ref={el => { fileRefs.current[s.id] = el; }}
+                  onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+                    try { call(s.id, "import", await readUpload(f), "Reading " + f.name); } catch (err) { setMsg(m => ({...m, [s.id]: {ok: false, text: err.message}})); } }}/>
+                <button className="bt-btn" disabled={!!busy} onClick={() => fileRefs.current[s.id]?.click()}>Upload report or file</button>
+              </>}
+              {t === "agent" && <button className="bt-btn" onClick={() => setOpen(open === s.id + "a" ? null : s.id + "a")}>Agent setup</button>}
+              <button className="bt-btn" disabled={!!busy} onClick={() => { if (!window.confirm(`Delete the “${s.name}” section?`)) return;
+                const purge = s.source?.type !== "existing" && window.confirm(`Also delete the values “${s.name}” imported? This can't be undone.\n\nOK = delete the data too · Cancel = keep the data in your history`);
+                call(s.id, "delete", {purge}, "Deleting"); }}>Delete</button>
+            </div>
+            {open === s.id + "c" && <form onSubmit={e => { e.preventDefault(); call(s.id, "secret", {value: token}, "Saving"); setOpen(null); setToken(""); }}
+              style={{display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginTop: "10px"}}>
+              <input type="password" autoComplete="off" className="bt-date" style={{flex: "1 1 240px", marginTop: 0}} value={token} onChange={e => setToken(e.target.value)}
+                placeholder={t === "api" ? `${s.source.app || "API"} personal access token` : "MCP bearer token (leave empty if none)"}/>
+              <button className="bt-btn" type="submit" style={{background: C.teal, borderColor: C.teal, color: "#fff"}}>Save token</button>
+              <div style={{width: "100%", fontSize: "12px", color: C.text3}}>Kept on the BodyData server, used only to read this data, and never shown again.{s.source.docsUrl && <> <a href={s.source.docsUrl} target="_blank" rel="noreferrer" style={{color: C.teal}}>Where to get it</a></>}</div>
+            </form>}
+            {open === s.id + "a" && <div style={{marginTop: "10px", fontSize: "12.5px", color: C.text2, lineHeight: 1.6, background: "#F8F9FC", border: "1px solid #EEF0F6", borderRadius: "8px", padding: "10px 12px"}}>
+              The BodyData Agent runs on <b>your</b> computer. You sign in to {s.source.app || "the app"} yourself, once, in the agent's own browser window; your password never reaches BodyData. On schedule it opens {s.source.startUrl ? <a href={s.source.startUrl} target="_blank" rel="noreferrer" style={{color: C.teal}}>the export page</a> : "the export page"}, downloads the export and uploads it here.
+              <pre style={{margin: "8px 0 0", whiteSpace: "pre-wrap", fontSize: "12px", background: "#fff", border: "1px solid #E7E8F1", borderRadius: "6px", padding: "8px"}}>{`cd ~/Biotracker/bodydata-agent && npm install
+node agent.js login ${s.id}     # sign in once
+node agent.js run ${s.id}       # test it
+node agent.js install           # run due jobs every hour`}</pre>
+              {s.source.instructions && <div style={{marginTop: "6px"}}>Export steps: {s.source.instructions}</div>}
+            </div>}
+            {m && <div style={{fontSize: "12.5px", fontWeight: 600, marginTop: "8px", color: m.ok === false ? C.red : m.ok ? C.green : C.text3}}>{m.ok === false ? "⚠ " : ""}{m.text}</div>}
+          </div>);
+      })}
+    </div>
+  );
+}
+function Automations({apiURL, apiSecret, sections = [], onSections, onData}) {
+  const base = (apiURL || "").replace(/\/sync\/?$/, "");
+  const H = {"x-api-secret": apiSecret};
+  const [src, setSrc] = useState(null), [err, setErr] = useState("");
+  const [rem, setRem] = useState([]), [remDirty, setRemDirty] = useState(false), [remMsg, setRemMsg] = useState("");
+  const [imp, setImp] = useState(null), [busy, setBusy] = useState(false), [showOld, setShowOld] = useState(false);
+  const fileRef = useRef();
+  const load = useCallback(async () => {
+    try {
+      const [a, b] = await Promise.all([fetch(`${base}/sources`, {headers: H}), fetch(`${base}/automations`, {headers: H})]);
+      if (!a.ok) throw new Error(`Server error ${a.status}`);
+      setSrc(await a.json()); if (b.ok) setRem((await b.json()).reminders || []); setErr("");
+    } catch (e) { setErr(e.message); }
+  }, [base, apiSecret]);
+  useEffect(() => { load(); }, [load]);
+
+  const upload = async (f) => {
+    if (!f) return; setBusy(true); setImp(null);
+    try {
+      const r = await fetch(`${base}/import/file`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify({filename: f.name, text: await f.text()})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || `Server error ${r.status}`);
+      setImp({ok: true, text: `${j.source}: imported ${j.imported} new or updated day${j.imported === 1 ? "" : "s"} (file covers ${fmtDate(j.first)} – ${fmtDate(j.newest)}).`}); load();
+    } catch (e) { setImp({ok: false, text: e.message}); }
+    setBusy(false);
+  };
+  const saveRem = async () => {
+    setRemMsg("Saving…");
+    try {
+      const r = await fetch(`${base}/automations`, {method: "POST", headers: {...H, "Content-Type": "application/json"}, body: JSON.stringify({reminders: rem})});
+      const j = await r.json(); if (!r.ok) throw new Error(j.error); setRem(j.reminders); setRemDirty(false);
+      setRemMsg("Saved. Your iPhone schedules these the next time BodyData opens.");
+    } catch (e) { setRemMsg("⚠ " + e.message); }
+  };
+  const edit = (i, patch) => { setRem(r => r.map((x, j) => j === i ? {...x, ...patch} : x)); setRemDirty(true); setRemMsg(""); };
+
+  // merge device-name variants ("Brandon’s iPhone (3)" → "iPhone")
+  const rows = useMemo(() => {
+    const m = new Map();
+    for (const x of src?.sources || []) {
+      const name = x.mode === "manual" ? x.name : appName(x.name);
+      const e = m.get(name);
+      if (!e || (x.last || "") > (e.last || "")) m.set(name, {...x, name, metrics: Math.max(x.metrics || 0, e?.metrics || 0)});
+    }
+    return [...m.values()];
+  }, [src]);
+  const active = rows.filter(x => x.mode === "manual" || (x.daysSince ?? 999) <= 90);
+  const old = rows.filter(x => !(x.mode === "manual" || (x.daysSince ?? 999) <= 90));
+  const chip = (x) => {
+    const d = x.daysSince ?? 999, manual = x.mode === "manual";
+    const [t, bg, fg] = d <= 2 ? ["Up to date", "rgba(31,157,107,.1)", C.green] : d <= 14 ? [`${d} days ago`, "#FFF6E5", "#9A6700"] : [manual ? "Export needed" : "Stopped sending", "rgba(214,69,69,.08)", C.red];
+    return <span style={{fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px", background: bg, color: fg, whiteSpace: "nowrap"}}>{t}</span>;
+  };
+  const card = {background: "#fff", border: `1px solid ${C.bord}`, borderRadius: "12px", padding: "18px", marginBottom: "16px"};
+  const h2 = {fontFamily: "'Inter',system-ui,sans-serif", fontSize: "15px", fontWeight: 700, color: C.text1};
+  const td = {padding: "9px 10px", borderTop: "1px solid #EEF0F6", fontSize: "13px", verticalAlign: "top"};
+  const Table = ({list}) => (
+    <div style={{overflowX: "auto"}}><table style={{borderCollapse: "collapse", width: "100%"}}>
+      <thead><tr>{["App", "How it arrives", "Latest data", "Metrics", "Status"].map(h => <th key={h} style={{textAlign: "left", fontSize: "11px", color: C.text3, fontWeight: 600, padding: "0 10px 6px", textTransform: "uppercase", letterSpacing: ".06em"}}>{h}</th>)}</tr></thead>
+      <tbody>{list.map(x => <tr key={x.name}>
+        <td style={{...td, fontWeight: 600, color: C.text1}}>{x.name}{x.note && <div style={{fontWeight: 400, fontSize: "12px", color: C.text3, marginTop: "2px", maxWidth: "380px"}}>{x.note}</div>}</td>
+        <td style={{...td, color: C.text2}}>{x.mode === "manual" ? "File export" : "Automatic (Apple Health)"}</td>
+        <td style={{...td, color: C.text2, whiteSpace: "nowrap"}}>{x.last ? fmtDate(x.last) : "—"}</td>
+        <td style={{...td, color: C.text2}}>{x.metrics || x.days ? (x.metrics ? `${x.metrics} types` : `${x.days} days`) : "—"}</td>
+        <td style={td}>{chip(x)}</td></tr>)}</tbody>
+    </table></div>);
+
+  return (
+    <div style={{padding: "18px 28px 28px", maxWidth: "1000px", fontFamily: "'Inter',system-ui,sans-serif"}}>
+      <div style={{fontFamily: "'Inter',system-ui,sans-serif", fontSize: "18px", fontWeight: 700, color: C.text1}}>Automations</div>
+      <div style={{fontSize: "12.5px", color: C.text3, margin: "2px 0 16px"}}>Every app feeding BodyData, whether it arrives on its own, and reminders for the ones that need an export.</div>
+      {err && <div style={{...card, color: C.red, fontSize: "13px"}}>⚠ {err}</div>}
+
+      <div style={card}>
+        <div style={{display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px"}}>
+          <div style={{...h2, flex: 1}}>Data sources</div>
+          {src?.lastPhoneSync && <span style={{fontSize: "12px", color: C.text3}}>Last iPhone sync {fmtDate(src.lastPhoneSync)}</span>}
+          <button className="bt-btn" onClick={load}>Refresh</button>
+        </div>
+        {!src ? <div style={{fontSize: "13px", color: C.text3}}>Loading…</div> : <>
+          <Table list={active}/>
+          {old.length > 0 && <button onClick={() => setShowOld(v => !v)} style={{border: 0, background: "none", color: C.teal, fontWeight: 600, fontSize: "12.5px", cursor: "pointer", marginTop: "10px", padding: 0, fontFamily: "inherit"}}>
+            {showOld ? "Hide" : "Show"} {old.length} app{old.length === 1 ? "" : "s"} with no data in 90+ days</button>}
+          {showOld && <div style={{marginTop: "8px"}}><Table list={old}/></div>}
+        </>}
+      </div>
+
+      <SectionsCard base={base} H={H} sections={sections} onSections={onSections} onData={onData} card={card} h2={h2}/>
+      <ConnectionsCard base={base} H={H} onSections={onSections} onData={onData} card={card} h2={h2}/>
+      <BuilderCard base={base} H={H} sections={sections} onSections={onSections} card={card} h2={h2}/>
+
+      <div style={card}>
+        <div style={h2}>Import an export file</div>
+        <div style={{fontSize: "12.5px", color: C.text3, margin: "2px 0 12px", lineHeight: 1.5}}>
+          <b>From your iPhone (easiest):</b> in the app, export → <b>Share</b> → <b>BodyData</b>. BodyData uploads it for you.<br/>
+          <b>From this computer:</b> choose the CSV below. Fitbod exports are recognised automatically; for any other app, AI maps the columns the first time and remembers the format.
+        </div>
+        <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{display: "none"}} onChange={e => { upload(e.target.files?.[0]); e.target.value = ""; }}/>
+        <button className="bt-btn" disabled={busy} onClick={() => fileRef.current.click()} style={{background: C.teal, borderColor: C.teal, color: "#fff"}}>{busy ? "Importing…" : "Choose export file"}</button>
+        {imp && <div style={{marginTop: "10px", fontSize: "13px", fontWeight: 600, color: imp.ok ? C.green : C.red}}>{imp.ok ? "✓ " : "⚠ "}{imp.text}</div>}
+      </div>
+
+      <div style={card}>
+        <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+          <div style={{...h2, flex: 1}}>Export reminders</div>
+          <select className="bt-date" style={{width: "auto", marginTop: 0}} value="" onChange={e => {
+            const p = REMINDER_PRESETS.find(x => x.app === e.target.value) || {app: "", openURL: ""};
+            setRem(r => [...r, {id: "r" + Date.now(), app: p.app, title: "", openURL: p.openURL, frequency: "weekly", weekday: 1, hour: 19, minute: 0, enabled: true}]); setRemDirty(true);
+          }}>
+            <option value="">+ Add reminder…</option>
+            {REMINDER_PRESETS.map(p => <option key={p.app} value={p.app}>{p.app}</option>)}
+            <option value="Other">Other app</option>
+          </select>
+        </div>
+        <div style={{fontSize: "12.5px", color: C.text3, margin: "4px 0 12px"}}>For apps that can't send their detail on their own. Your iPhone shows the reminder on schedule; tapping it opens the app so you can export and share to BodyData (~10 seconds).</div>
+        {rem.length === 0 && <div style={{fontSize: "13px", color: C.text3}}>No reminders yet. Fitbod is the one to add: weekly is enough, since each export includes your full history.</div>}
+        {rem.map((r, i) => (
+          <div key={r.id} style={{display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "flex-end", padding: "10px 0", borderTop: i ? "1px solid #EEF0F6" : 0}}>
+            <label style={{fontSize: "12px", color: "#7A80A6", width: "150px"}}>App<input className="bt-date" value={r.app} onChange={e => edit(i, {app: e.target.value})}/></label>
+            <label style={{fontSize: "12px", color: "#7A80A6", width: "110px"}}>How often
+              <select className="bt-date" value={r.frequency} onChange={e => edit(i, {frequency: e.target.value})}><option value="weekly">Weekly</option><option value="daily">Daily</option></select></label>
+            {r.frequency === "weekly" && <label style={{fontSize: "12px", color: "#7A80A6", width: "90px"}}>Day
+              <select className="bt-date" value={r.weekday} onChange={e => edit(i, {weekday: +e.target.value})}>{WEEKDAYS.map((d, j) => <option key={d} value={j + 1}>{d}</option>)}</select></label>}
+            <label style={{fontSize: "12px", color: "#7A80A6", width: "110px"}}>Time<input type="time" className="bt-date" value={`${String(r.hour).padStart(2, "0")}:${String(r.minute).padStart(2, "0")}`}
+              onChange={e => { const [h, m] = e.target.value.split(":"); edit(i, {hour: +h, minute: +m}); }}/></label>
+            <label style={{fontSize: "12px", color: "#7A80A6", display: "flex", alignItems: "center", gap: "6px", height: "34px"}}>
+              <input type="checkbox" checked={r.enabled} onChange={e => edit(i, {enabled: e.target.checked})}/> On</label>
+            <button className="bt-btn" onClick={() => { setRem(x => x.filter((_, j) => j !== i)); setRemDirty(true); }}>Remove</button>
+            {REMINDER_PRESETS.find(p => p.app === r.app)?.note && <div style={{width: "100%", fontSize: "12px", color: C.text3}}>{REMINDER_PRESETS.find(p => p.app === r.app).note}</div>}
+          </div>))}
+        {(remDirty || remMsg) && <div style={{display: "flex", gap: "10px", alignItems: "center", marginTop: "12px"}}>
+          {remDirty && <button className="bt-btn" onClick={saveRem} style={{background: C.teal, borderColor: C.teal, color: "#fff"}}>Save reminders</button>}
+          <span style={{fontSize: "12.5px", color: remMsg.startsWith("⚠") ? C.red : C.text3}}>{remMsg}</span></div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── MANUAL UPLOAD (measurements, BF%, RMR, custom metrics → saved to the API by date) ───
+const MU_GROUPS = ["body","segmental","measurements"];
+const MU_SOURCES = ["Manual","DEXA scan","Bod Pod","InBody","Hume","Metabolic test (RMR)","Tape measure","Other"];
+const muNorm = s => String(s || "").toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z0-9]/g, "");
+const muSlug = s => "c_" + String(s).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+const MU_ALIASES = {bf:"bodyFat",bfp:"bodyFat",bodyfatpercent:"bodyFat",bodyfatpct:"bodyFat",fat:"bodyFat",
+  restingmetabolicrate:"rmr",basalmetabolicrate:"bmr",lbm:"leanMass",leanbodymass:"leanMass",waist:"waistIn",chest:"chestIn",
+  hips:"hipsIn",neck:"neckIn",shoulders:"shouldersIn",weightlbs:"weight",bodyweight:"weight",vat:"visceralFat"};
+function muFieldIndex() {
+  const idx = {};
+  for (const g of GROUPS) for (const r of g.rows) { idx[muNorm(r.k)] = r.k; idx[muNorm(r.l)] = r.k; }
+  for (const [a, k] of Object.entries(MU_ALIASES)) idx[a] = k;
+  return idx;
+}
+// "2026-11-03", "11/3/2026", "Nov 3 2026" → "2026-11-03"
+function muDate(v) {
+  const t = String(v || "").trim(); if (!t) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; return `${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; }
+  const d = new Date(t); return isNaN(d) ? null : ymdOf(d);
+}
+function muParse(text) {
+  const lines = String(text).trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return {error: "Need a header row plus at least one data row."};
+  const delim = lines[0].includes("\t") ? "\t" : ",";
+  const split = l => { const out = []; let cur = "", q = false;
+    for (const ch of l) { if (ch === '"') q = !q; else if (ch === delim && !q) { out.push(cur); cur = ""; } else cur += ch; }
+    out.push(cur); return out.map(x => x.trim()); };
+  const head = split(lines[0]), fi = muFieldIndex();
+  const di = head.findIndex(h => /^(date|day|measured|scan ?date)$/i.test(h.trim()));
+  if (di < 0) return {error: 'The first row needs a "date" column.'};
+  const cols = head.map((h, i) => {
+    if (i === di) return null;
+    const unit = (h.match(/\(([^)]+)\)/) || [])[1] || "";
+    const known = fi[muNorm(h)];
+    return known ? {h, k: known, known: true} : {h, k: muSlug(h.replace(/\(.*?\)/g, "")), l: h.replace(/\(.*?\)/g, "").trim(), u: unit, known: false};
+  });
+  const rows = []; const bad = [];
+  lines.slice(1).forEach((l, n) => {
+    const v = split(l), date = muDate(v[di]);
+    if (!date) { bad.push(n + 2); return; }
+    const vals = {};
+    cols.forEach((c, i) => { if (!c) return; const x = parseFloat(String(v[i] || "").replace(/[^0-9.\-]/g, "")); if (isFinite(x)) vals[c.k] = x; });
+    if (Object.keys(vals).length) rows.push({date, vals});
+  });
+  return {cols: cols.filter(Boolean), rows, bad};
+}
+
+function ManualUpload({apiURL, apiSecret, prefill, history, onSaved}) {
+  const fields = GROUPS.filter(g => MU_GROUPS.includes(g.id));
+  const [date, setDate] = useState(todayYmd());
+  const [source, setSource] = useState("Manual");
+  const [vals, setVals] = useState({});
+  const [custom, setCustom] = useState([]);           // [{l,u,v}]
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);                // {ok,text}
+  const [bulk, setBulk] = useState(null);              // parsed CSV
+  const [paste, setPaste] = useState("");
+  const fileRef = useRef();
+  useEffect(() => { if (prefill && Object.keys(prefill).length) setVals(v => ({...v, ...prefill})); }, [prefill]);
+
+  const base = (apiURL || "").replace(/\/sync\/?$/, "");
+  const post = async (body) => {
+    const r = await fetch(`${base}/sync`, {method: "POST", headers: {"Content-Type": "application/json", "x-api-secret": apiSecret}, body: JSON.stringify(body)});
+    if (!r.ok) throw new Error(r.status === 401 ? "Wrong API secret (check the Sync & Connect tab)" : `Server error ${r.status}`);
+  };
+  const stamp = () => new Date().toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"});
+
+  const saveOne = async () => {
+    const body = {};
+    for (const [k, v] of Object.entries(vals)) { const x = parseFloat(v); if (isFinite(x)) body[k] = x; }
+    const defs = {};
+    for (const c of custom) { const x = parseFloat(c.v); if (!c.l.trim() || !isFinite(x)) continue; const k = muSlug(c.l); body[k] = x; defs[k] = {l: c.l.trim(), u: c.u.trim()}; }
+    const n = Object.keys(body).length;
+    if (!n) { setMsg({ok: false, text: "Enter at least one value."}); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await post({...body, ...(Object.keys(defs).length ? {customDefs: defs} : {}), syncDate: date, syncTime: stamp(), source});
+      setMsg({ok: true, text: `Saved ${n} value${n === 1 ? "" : "s"} for ${fmtDate(date)}. They're on the KPI board now.`});
+      setVals({}); setCustom([]); onSaved && onSaved();
+    } catch (e) { setMsg({ok: false, text: e.message}); }
+    setBusy(false);
+  };
+
+  const loadBulk = (text) => { const r = muParse(text); setBulk(r); setMsg(r.error ? {ok: false, text: r.error} : null); };
+  const uploadBulk = async () => {
+    if (!bulk?.rows?.length) return;
+    const defs = {}; for (const c of bulk.cols) if (!c.known) defs[c.k] = {l: c.l, u: c.u};
+    setBusy(true); setMsg(null);
+    let done = 0;
+    try {
+      for (const r of bulk.rows) {
+        await post({...r.vals, ...(Object.keys(defs).length ? {customDefs: defs} : {}), syncDate: r.date, syncTime: stamp(), source});
+        done++;
+      }
+      setMsg({ok: true, text: `Uploaded ${done} date${done === 1 ? "" : "s"}. They're on the KPI board now.`});
+      setBulk(null); setPaste(""); onSaved && onSaved();
+    } catch (e) { setMsg({ok: false, text: `${e.message} — ${done} of ${bulk.rows.length} uploaded.`}); }
+    setBusy(false);
+  };
+
+  const recent = (history || []).filter(d => d.src && d.src !== "apple-health").slice().sort((a, b) => String(b._rx || "").localeCompare(String(a._rx || ""))).slice(0, 8);
+  const lbl = k => GROUPS.flatMap(g => g.rows).find(r => r.k === k)?.l || k;
+  const card = {background: "#fff", border: `1px solid ${C.bord}`, borderRadius: "12px", padding: "18px", marginBottom: "16px"};
+  const h2 = {fontFamily: "'Inter',system-ui,sans-serif", fontSize: "15px", fontWeight: 700, color: C.text1};
+  const lab = {fontSize: "12px", color: "#7A80A6", display: "block"};
+
+  return (
+    <div style={{fontFamily: "'Inter',system-ui,sans-serif"}}>
+      {msg && <div style={{...card, padding: "12px 16px", borderColor: msg.ok ? "rgba(31,157,107,.35)" : "rgba(214,69,69,.35)", background: msg.ok ? "rgba(31,157,107,.06)" : "rgba(214,69,69,.05)", color: msg.ok ? C.green : C.red, fontSize: "13px", fontWeight: 600}}>{msg.ok ? "✓ " : "⚠ "}{msg.text}</div>}
+
+      <div style={card}>
+        <div style={{display: "flex", gap: "16px", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "4px"}}>
+          <div style={{flex: "1 1 220px"}}>
+            <div style={h2}>Add a measurement</div>
+            <div style={{fontSize: "12.5px", color: C.text3, marginTop: "2px"}}>Fill in only what you measured. Saved to your account by date and shown on the KPI board.</div>
+          </div>
+          <label style={{...lab, width: "160px"}}>Date measured<input type="date" className="bt-date" value={date} max={todayYmd()} onChange={e => e.target.value && setDate(e.target.value)}/></label>
+          <label style={{...lab, width: "190px"}}>Source
+            <select className="bt-date" value={source} onChange={e => setSource(e.target.value)}>{MU_SOURCES.map(s => <option key={s}>{s}</option>)}</select>
+          </label>
+        </div>
+        {fields.map(g => (
+          <div key={g.id} style={{marginTop: "18px"}}>
+            <div className="bt-eyebrow" style={{marginBottom: "8px"}}>{g.name}</div>
+            <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: "10px"}}>
+              {g.rows.map(r => (
+                <label key={r.k} style={lab}>{r.l}{r.u && <span style={{color: C.text3}}> ({r.u})</span>}
+                  <input type="number" step="any" inputMode="decimal" className="bt-date" value={vals[r.k] ?? ""}
+                    onChange={e => setVals(v => { const n = {...v}; if (e.target.value === "") delete n[r.k]; else n[r.k] = e.target.value; return n; })}/>
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div style={{marginTop: "18px"}}>
+          <div className="bt-eyebrow" style={{marginBottom: "8px"}}>Custom metrics</div>
+          {custom.map((c, i) => (
+            <div key={i} style={{display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: "8px", marginBottom: "8px", alignItems: "end"}}>
+              <label style={lab}>Name<input className="bt-date" placeholder="e.g. Grip strength" value={c.l} onChange={e => setCustom(a => a.map((x, j) => j === i ? {...x, l: e.target.value} : x))}/></label>
+              <label style={lab}>Value<input type="number" step="any" className="bt-date" value={c.v} onChange={e => setCustom(a => a.map((x, j) => j === i ? {...x, v: e.target.value} : x))}/></label>
+              <label style={lab}>Unit<input className="bt-date" placeholder="lbs, %, kcal" value={c.u} onChange={e => setCustom(a => a.map((x, j) => j === i ? {...x, u: e.target.value} : x))}/></label>
+              <button className="bt-btn" onClick={() => setCustom(a => a.filter((_, j) => j !== i))} aria-label="Remove">✕</button>
+            </div>
+          ))}
+          <button className="bt-btn" onClick={() => setCustom(a => [...a, {l: "", u: "", v: ""}])}>+ Add custom metric</button>
+        </div>
+        <div style={{display: "flex", gap: "10px", marginTop: "20px", alignItems: "center"}}>
+          <button className="bt-btn" disabled={busy} onClick={saveOne} style={{background: C.teal, borderColor: C.teal, color: "#fff", opacity: busy ? .6 : 1}}>{busy ? "Saving…" : `Save for ${shortDay(date)}`}</button>
+          <button className="bt-btn" onClick={() => { setVals({}); setCustom([]); }}>Clear</button>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={h2}>Upload a spreadsheet</div>
+        <div style={{fontSize: "12.5px", color: C.text3, margin: "2px 0 12px", lineHeight: 1.5}}>
+          CSV, or paste straight from Excel / Google Sheets. One row per date, first column <b>date</b>. Columns are matched by name
+          (Weight, Body Fat %, RMR, Lean Mass, Waist…). Any column BodyData doesn't know becomes a custom metric — put the unit in brackets, e.g. <code>Grip (lbs)</code>.
+        </div>
+        <div style={{display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "10px"}}>
+          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt,text/csv" style={{display: "none"}}
+            onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(loadBulk); e.target.value = ""; }}/>
+          <button className="bt-btn" onClick={() => fileRef.current.click()}>Choose CSV file</button>
+          <button className="bt-btn" onClick={() => { const t = "date,Weight (lbs),Body Fat %,Lean Mass (lbs),RMR (kcal),Waist (in)\n" + todayYmd() + ",180.4,15.2,153.0,1950,33.5\n";
+            const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([t], {type: "text/csv"})); a.download = "biotrack-measurements-template.csv"; a.click(); }}>Download template</button>
+        </div>
+        <textarea value={paste} onChange={e => setPaste(e.target.value)} placeholder={"date\tWeight (lbs)\tBody Fat %\tRMR (kcal)\n11/3/2026\t181.2\t15.8\t1940"}
+          style={{width: "100%", boxSizing: "border-box", minHeight: "90px", border: `1px solid ${C.bord}`, borderRadius: "8px", padding: "10px", font: "12.5px ui-monospace,Menlo,monospace", color: C.text1}}/>
+        {paste.trim() && <button className="bt-btn" style={{marginTop: "8px"}} onClick={() => loadBulk(paste)}>Preview pasted data</button>}
+        {bulk && !bulk.error && (
+          <div style={{marginTop: "14px"}}>
+            <div style={{fontSize: "12.5px", color: C.text2, marginBottom: "8px"}}>
+              <b>{bulk.rows.length}</b> date{bulk.rows.length === 1 ? "" : "s"} ready · columns: {bulk.cols.map(c => (
+                <span key={c.h} style={{display: "inline-block", margin: "2px 4px 2px 0", padding: "1px 7px", borderRadius: "6px", fontSize: "11.5px",
+                  background: c.known ? "rgba(31,157,107,.1)" : "#F1F2F8", color: c.known ? C.green : C.text2}}>{c.known ? lbl(c.k) : c.l + " (custom)"}</span>))}
+              {bulk.bad.length > 0 && <div style={{color: C.red, marginTop: "4px"}}>Skipped row{bulk.bad.length === 1 ? "" : "s"} {bulk.bad.join(", ")}: date not recognised.</div>}
+            </div>
+            <div style={{maxHeight: "220px", overflow: "auto", border: `1px solid ${C.bord}`, borderRadius: "8px"}}>
+              <table style={{borderCollapse: "collapse", width: "100%", fontSize: "12px"}}>
+                <thead><tr>{["Date", ...bulk.cols.map(c => c.known ? lbl(c.k) : c.l)].map(h => <th key={h} style={{textAlign: "left", padding: "6px 10px", background: "#F7F6F3", position: "sticky", top: 0, color: C.text2}}>{h}</th>)}</tr></thead>
+                <tbody>{bulk.rows.map(r => <tr key={r.date}><td style={{padding: "5px 10px", borderTop: "1px solid #EEF0F6"}}>{fmtDate(r.date)}</td>
+                  {bulk.cols.map(c => <td key={c.k} style={{padding: "5px 10px", borderTop: "1px solid #EEF0F6"}}>{r.vals[c.k] ?? "—"}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+            <div style={{display: "flex", gap: "10px", marginTop: "12px"}}>
+              <button className="bt-btn" disabled={busy || !bulk.rows.length} onClick={uploadBulk} style={{background: C.teal, borderColor: C.teal, color: "#fff", opacity: busy ? .6 : 1}}>{busy ? "Uploading…" : `Upload ${bulk.rows.length} date${bulk.rows.length === 1 ? "" : "s"}`}</button>
+              <button className="bt-btn" onClick={() => setBulk(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {recent.length > 0 && (
+        <div style={card}>
+          <div style={h2}>Recent uploads</div>
+          {recent.map((d, i) => {
+            const keys = Object.keys(d).filter(k => typeof d[k] === "number" && !["dow"].includes(k));
+            return <div key={i} style={{display: "flex", gap: "12px", padding: "9px 0", borderTop: i ? "1px solid #EEF0F6" : 0, fontSize: "12.5px"}}>
+              <div style={{width: "110px", flexShrink: 0, fontWeight: 600, color: C.text1}}>{fmtDate(dayKey(d))}</div>
+              <div style={{width: "130px", flexShrink: 0, color: C.text3}}>{d.src}</div>
+              <div style={{color: C.text2}}>{keys.slice(0, 8).map(k => `${d.customDefs?.[k]?.l || lbl(k)} ${d[k]}`).join(" · ")}{keys.length > 8 ? ` +${keys.length - 8} more` : ""}</div>
+            </div>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── METRIC DRILL-DOWN PANEL ──────────────────────────────────────────────────
 function MetricDrillDown({ metric, allData, onClose }) {
   const [range, setRange] = useState("30d");
@@ -1044,57 +1921,52 @@ function MetricDrillDown({ metric, allData, onClose }) {
 
   const keyLabel = k => SUMMARY_METRICS.find(m=>m.key===k)?.label || k;
 
+  const D={
+    bg:"#F8F9FC",surf:"#FFFFFF",nav:"#F1F2F8",
+    bord:"#E7E8F1",bord2:"#D3D6E6",
+    t1:"#2B2E4A",t2:"#4A4F6E",t3:"#7A80A6",dim:"#A9AECB",
+    teal:"#5468FF",green:"#1F9D6B",red:"#B4232C",
+  };
+
   return (
-    <div style={{position:"fixed",inset:0,zIndex:2000,display:"flex"}} onClick={onClose}>
-      {/* Dim backdrop */}
-      <div style={{flex:1,background:"rgba(0,0,0,0.55)"}}/>
-      {/* Panel */}
-      <div
-        onClick={e=>e.stopPropagation()}
-        style={{
-          width:580,maxWidth:"96vw",background:"#08080f",
-          borderLeft:"1px solid #1e1e2e",overflow:"auto",
-          display:"flex",flexDirection:"column",
-          animation:"ddSlideIn 0.22s cubic-bezier(0.16,1,0.3,1)",
-        }}
-      >
-        {/* Header */}
-        <div style={{padding:"18px 24px",borderBottom:"1px solid #1e1e2e",background:"#06060c",position:"sticky",top:0,zIndex:1,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div>
-            <div style={{fontSize:10,color:"#606080",letterSpacing:"2.5px",marginBottom:6,fontWeight:600}}>{metric.label.toUpperCase()}</div>
-            <div style={{display:"flex",alignItems:"baseline",gap:14}}>
-              <div style={{fontSize:34,fontWeight:"bold",color:metric.col,fontFamily:"'Courier New',monospace",lineHeight:1}}>
+    <div style={{background:D.bg,display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif",minHeight:"100%"}}>
+        {/* Back / close header */}
+        <div style={{padding:"14px 24px",borderBottom:`1px solid ${D.bord}`,background:D.surf,position:"sticky",top:0,zIndex:1,display:"flex",alignItems:"center",gap:"12px"}}>
+          <button onClick={onClose} style={{background:"transparent",border:`1px solid ${D.bord}`,color:D.t2,cursor:"pointer",fontSize:"12px",padding:"5px 12px",borderRadius:"8px",fontFamily:"inherit",display:"flex",alignItems:"center",gap:"5px",flexShrink:0}}>← Back</button>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:D.t3,marginBottom:"2px"}}>{metric.label}</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:"10px",flexWrap:"wrap"}}>
+              <span style={{fontSize:"34px",fontFamily:"'Jomolhari','Georgia',serif",color:D.t1,lineHeight:1}}>
                 {summaryFmtVal(cur,metric.unit)}
-              </div>
+              </span>
               {pct!=null&&(
-                <div style={{fontSize:14,fontWeight:"bold",color:isGood?"#4ade80":isBad?"#f87171":"#a0a0a0"}}>
+                <span style={{fontSize:"13px",fontWeight:600,color:isGood?D.green:isBad?D.red:D.t3,background:isGood?"rgba(31,157,107,.09)":isBad?"rgba(214,69,69,.09)":"transparent",padding:"3px 9px",borderRadius:"6px"}}>
                   {isGood?"↑":isBad?"↓":"→"} {Math.abs(pct).toFixed(1)}%
-                </div>
+                </span>
               )}
             </div>
-            {startVal!=null&&cur!=null&&<div style={{fontSize:11,color:"#606080",marginTop:4}}>from {summaryFmtVal(startVal,metric.unit)} over selected range</div>}
+            {startVal!=null&&cur!=null&&<div style={{fontSize:"12px",color:D.t3,marginTop:"2px"}}>from {summaryFmtVal(startVal,metric.unit)} · {range.toUpperCase()}</div>}
           </div>
-          <button onClick={onClose} style={{background:"none",border:"1px solid #2a2a3e",color:"#606080",cursor:"pointer",fontSize:18,padding:"4px 12px",borderRadius:6,lineHeight:1,flexShrink:0}}>✕</button>
         </div>
 
-        <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:22}}>
+        <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:20}}>
 
-          {/* Range toggle */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {/* Range chips */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[["7d","7D"],["30d","30D"],["90d","90D"],["180d","6M"],["365d","1Y"],["all","ALL"]].map(([id,lbl])=>(
               <button key={id} onClick={()=>setRange(id)} style={{
-                padding:"5px 13px",fontSize:10,borderRadius:4,cursor:"pointer",fontFamily:"'Courier New',monospace",letterSpacing:"1px",
-                background:range===id?metric.col:"transparent",
-                border:`1px solid ${range===id?metric.col:"#2a2a3e"}`,
-                color:range===id?"#000":"#a0a0a0",
-                fontWeight:range===id?"bold":"normal",
+                height:"30px",padding:"0 12px",borderRadius:"20px",cursor:"pointer",fontSize:"12.5px",fontFamily:"inherit",
+                background:range===id?D.t1:"#fff",
+                border:`1px solid ${range===id?D.t1:D.bord}`,
+                color:range===id?"#F8F9FC":D.t2,
+                fontWeight:range===id?600:400,
               }}>{lbl}</button>
             ))}
           </div>
 
-          {/* Chart */}
+          {/* BigChart */}
           {plotData.length>1&&(
-            <div style={{background:"#0e0e18",borderRadius:10,padding:"14px 10px 8px",border:"1px solid #1e1e2e",position:"relative"}}>
+            <div style={{background:D.surf,borderRadius:"12px",padding:"16px 12px 10px",border:`1px solid ${D.bord}`,position:"relative"}}>
               <svg
                 width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
                 style={{display:"block",cursor:"crosshair"}}
@@ -1107,43 +1979,50 @@ function MetricDrillDown({ metric, allData, onClose }) {
               >
                 <defs>
                   <linearGradient id={`ddGrad_${metric.key}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={metric.col} stopOpacity="0.18"/>
-                    <stop offset="100%" stopColor={metric.col} stopOpacity="0"/>
+                    <stop offset="0%" stopColor={metric.col} stopOpacity="0.14"/>
+                    <stop offset="100%" stopColor={metric.col} stopOpacity="0.01"/>
                   </linearGradient>
                 </defs>
+                {/* Y-axis grid lines */}
+                {[0.25,0.5,0.75].map(f=>{
+                  const y=10+(1-f)*(H-24);
+                  return <line key={f} x1={0} y1={y} x2={W} y2={y} stroke={D.bord} strokeWidth="1"/>;
+                })}
                 {areaPath&&<path d={areaPath} fill={`url(#ddGrad_${metric.key})`}/>}
-                <polyline points={linePts} fill="none" stroke={metric.col} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+                <polyline points={linePts} fill="none" stroke={metric.col} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+                {/* Hover */}
                 {hovIdx!=null&&plotData[hovIdx]&&(
                   <>
-                    <line x1={toX(hovIdx)} y1={0} x2={toX(hovIdx)} y2={H} stroke={metric.col} strokeWidth="1" strokeDasharray="3,3" opacity="0.45"/>
-                    <circle cx={toX(hovIdx)} cy={toY(plotData[hovIdx].val)} r={5} fill={metric.col} stroke="#08080f" strokeWidth="2"/>
+                    <line x1={toX(hovIdx)} y1={0} x2={toX(hovIdx)} y2={H} stroke={D.bord2} strokeWidth="1"/>
+                    <circle cx={toX(hovIdx)} cy={toY(plotData[hovIdx].val)} r={5} fill={metric.col} stroke={D.surf} strokeWidth="2"/>
                   </>
                 )}
-                <text x={2} y={H-1} fontSize={8} fill="#404060">{summaryFmtVal(mn,metric.unit)}</text>
-                <text x={W-2} y={H-1} fontSize={8} fill="#404060" textAnchor="end">{summaryFmtVal(mx2,metric.unit)}</text>
+                {/* Y labels */}
+                <text x={2} y={H-2} fontSize={9} fill={D.t3}>{summaryFmtVal(mn,metric.unit)}</text>
+                <text x={W-2} y={H-2} fontSize={9} fill={D.t3} textAnchor="end">{summaryFmtVal(mx2,metric.unit)}</text>
               </svg>
-              {/* Tooltip */}
+              {/* Hover tooltip */}
               {hovIdx!=null&&plotData[hovIdx]&&(
-                <div style={{position:"absolute",top:8,left:14,background:"#12122a",border:`1px solid ${metric.col}50`,borderRadius:7,padding:"7px 14px",fontSize:11,color:"#f0f0f0",pointerEvents:"none",minWidth:100}}>
-                  <div style={{color:"#606080",marginBottom:3,fontSize:10}}>{plotData[hovIdx].date}</div>
-                  <div style={{fontWeight:"bold",color:metric.col,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(plotData[hovIdx].val,metric.unit)}</div>
+                <div style={{position:"absolute",top:10,left:16,background:D.surf,border:`1px solid ${D.bord}`,borderRadius:"8px",padding:"8px 14px",fontSize:"12px",color:D.t1,pointerEvents:"none",minWidth:110,boxShadow:"0 4px 12px rgba(43,46,74,.08)"}}>
+                  <div style={{color:D.t3,marginBottom:"3px",fontSize:"11px"}}>{plotData[hovIdx].date}</div>
+                  <div style={{fontWeight:600,color:metric.col,fontFamily:"'Jomolhari','Georgia',serif",fontSize:"16px"}}>{summaryFmtVal(plotData[hovIdx].val,metric.unit)}</div>
                 </div>
               )}
             </div>
           )}
-          {plotData.length<=1&&<div style={{background:"#0e0e18",borderRadius:10,padding:24,border:"1px solid #1e1e2e",textAlign:"center",color:"#404060",fontSize:11}}>Not enough data for this range</div>}
+          {plotData.length<=1&&<div style={{background:D.surf,borderRadius:"12px",padding:"24px",border:`1px solid ${D.bord}`,textAlign:"center",color:D.t3,fontSize:"13px"}}>Not enough data for this range</div>}
 
           {/* Stats row */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"10px"}}>
             {[
-              {label:"CURRENT",val:summaryFmtVal(cur,metric.unit)},
-              {label:"AVG",val:summaryFmtVal(avg!=null?+avg.toFixed(2):null,metric.unit)},
-              {label:metric.lowerBetter?"BEST ↓":"BEST ↑",val:summaryFmtVal(best,metric.unit)},
-              {label:metric.lowerBetter?"WORST ↑":"WORST ↓",val:summaryFmtVal(worst,metric.unit)},
+              {label:"Current",val:summaryFmtVal(cur,metric.unit)},
+              {label:"Avg",val:summaryFmtVal(avg!=null?+avg.toFixed(2):null,metric.unit)},
+              {label:metric.lowerBetter?"Best ↓":"Best ↑",val:summaryFmtVal(best,metric.unit)},
+              {label:metric.lowerBetter?"Worst ↑":"Worst ↓",val:summaryFmtVal(worst,metric.unit)},
             ].map(s=>(
-              <div key={s.label} style={{background:"#0e0e18",borderRadius:8,padding:"12px 10px",border:"1px solid #1e1e2e",textAlign:"center"}}>
-                <div style={{fontSize:9,color:"#505070",letterSpacing:"1.5px",marginBottom:6,fontWeight:600}}>{s.label}</div>
-                <div style={{fontSize:14,fontWeight:"bold",color:C.text1,fontFamily:"'Courier New',monospace"}}>{s.val}</div>
+              <div key={s.label} style={{background:D.surf,borderRadius:"10px",padding:"12px 10px",border:`1px solid ${D.bord}`,textAlign:"center"}}>
+                <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",color:D.t3,marginBottom:"6px"}}>{s.label}</div>
+                <div style={{fontSize:"16px",fontFamily:"'Jomolhari','Georgia',serif",color:D.t1}}>{s.val}</div>
               </div>
             ))}
           </div>
@@ -1151,19 +2030,19 @@ function MetricDrillDown({ metric, allData, onClose }) {
           {/* Historical comparisons */}
           {comps.length>0&&(
             <div>
-              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>VS PAST</div>
-              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                {comps.map(c=>{
+              <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:D.t3,marginBottom:"10px"}}>Vs Past</div>
+              <div style={{background:D.surf,borderRadius:"10px",border:`1px solid ${D.bord}`,overflow:"hidden"}}>
+                {comps.map((c,i)=>{
                   const diff=cur!=null?cur-c.val:null;
                   const dp=diff!=null&&c.val!==0?(diff/Math.abs(c.val)*100):null;
                   const good=dp!=null&&(metric.lowerBetter?dp<0:dp>0);
                   const bad =dp!=null&&(metric.lowerBetter?dp>0:dp<0);
                   return (
-                    <div key={c.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0e0e18",borderRadius:6,padding:"10px 14px",border:"1px solid #1a1a2e"}}>
-                      <div style={{fontSize:11,color:"#909090"}}>{c.label}</div>
-                      <div style={{display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{fontSize:11,color:"#505070",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(c.val,metric.unit)}</div>
-                        {dp!=null&&<div style={{fontSize:12,fontWeight:"bold",color:good?"#4ade80":bad?"#f87171":"#a0a0a0",minWidth:52,textAlign:"right"}}>{good?"↑":bad?"↓":"→"} {Math.abs(dp).toFixed(1)}%</div>}
+                    <div key={c.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:i<comps.length-1?`1px solid ${D.bord}`:"none"}}>
+                      <div style={{fontSize:"13px",color:D.t2}}>{c.label}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+                        <div style={{fontSize:"13px",color:D.t3,fontFamily:"'Jomolhari','Georgia',serif"}}>{summaryFmtVal(c.val,metric.unit)}</div>
+                        {dp!=null&&<div style={{fontSize:"12px",fontWeight:600,color:good?D.green:bad?D.red:D.t3,minWidth:"52px",textAlign:"right"}}>{good?"↑":bad?"↓":"→"} {Math.abs(dp).toFixed(1)}%</div>}
                       </div>
                     </div>
                   );
@@ -1175,26 +2054,26 @@ function MetricDrillDown({ metric, allData, onClose }) {
           {/* Goal tracker */}
           {goal&&cur!=null&&(
             <div>
-              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>GOAL PROGRESS</div>
-              <div style={{background:"#0e0e18",borderRadius:8,padding:"14px",border:"1px solid #1e1e2e"}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                  <span style={{fontSize:11,color:"#a0a0a0"}}>{goal.label}</span>
-                  <span style={{fontSize:11,color:metric.col,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,metric.unit)} → {summaryFmtVal(goal.target,metric.unit)}</span>
+              <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:D.t3,marginBottom:"10px"}}>Goal Progress</div>
+              <div style={{background:D.surf,borderRadius:"10px",padding:"16px",border:`1px solid ${D.bord}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:"12px"}}>
+                  <span style={{fontSize:"13px",color:D.t2}}>{goal.label}</span>
+                  <span style={{fontSize:"13px",color:metric.col,fontFamily:"'Jomolhari','Georgia',serif"}}>{summaryFmtVal(cur,metric.unit)} → {summaryFmtVal(goal.target,metric.unit)}</span>
                 </div>
-                <div style={{background:"#1a1a2e",borderRadius:4,height:8,overflow:"hidden"}}>
+                <div style={{background:D.bord,borderRadius:"4px",height:"8px",overflow:"hidden"}}>
                   {(()=>{
                     const start=allData[allData.length-1]?.[metric.key]??cur;
                     const totalDrop=start-goal.target;
                     const doneDrop=start-cur;
                     const pctDone=totalDrop>0?Math.min(100,Math.max(0,(doneDrop/totalDrop)*100)):0;
-                    return <div style={{height:"100%",background:metric.col,borderRadius:4,width:`${pctDone}%`,transition:"width 0.5s ease"}}/>;
+                    return <div style={{height:"100%",background:metric.col,borderRadius:"4px",width:`${pctDone}%`,transition:"width 0.5s ease"}}/>;
                   })()}
                 </div>
                 {metric.lowerBetter&&cur>goal.target&&allData.length>7&&(()=>{
                   const recent7=allData.slice(0,7).filter(d=>d[metric.key]!=null);
                   const rate=recent7.length>1?(recent7[0][metric.key]-recent7[recent7.length-1][metric.key])/recent7.length:0;
                   const weeks=rate>0?Math.ceil((cur-goal.target)/(rate*7)):null;
-                  return <div style={{fontSize:10,color:"#505070",marginTop:8}}>{(cur-goal.target).toFixed(1)}{metric.unit} to go{weeks?` · ~${weeks} weeks at current pace`:""}</div>;
+                  return <div style={{fontSize:"11.5px",color:D.t3,marginTop:"8px"}}>{(cur-goal.target).toFixed(1)}{metric.unit} to go{weeks?` · ~${weeks} weeks at current pace`:""}</div>;
                 })()}
               </div>
             </div>
@@ -1203,23 +2082,23 @@ function MetricDrillDown({ metric, allData, onClose }) {
           {/* Correlations */}
           {correlations.length>0&&(
             <div>
-              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>WHAT MOVES WITH THIS</div>
-              <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                {correlations.map(c=>{
+              <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:D.t3,marginBottom:"10px"}}>Correlated Metrics</div>
+              <div style={{background:D.surf,borderRadius:"10px",border:`1px solid ${D.bord}`,overflow:"hidden"}}>
+                {correlations.map((c,i)=>{
                   const strong=Math.abs(c.r)>0.55;
                   const pos=c.r>0;
                   const insight=metric.lowerBetter
                     ?(pos?`Higher ${keyLabel(c.key)} → higher ${metric.label} (worse)`:`Higher ${keyLabel(c.key)} → lower ${metric.label} (better)`)
                     :(pos?`Higher ${keyLabel(c.key)} → higher ${metric.label} (better)`:`Higher ${keyLabel(c.key)} → lower ${metric.label}`);
                   return (
-                    <div key={c.key} style={{background:"#0e0e18",borderRadius:6,padding:"10px 14px",border:"1px solid #1a1a2e"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                        <div style={{fontSize:12,color:C.text2,fontWeight:600}}>{keyLabel(c.key)}</div>
-                        <div style={{fontSize:11,fontWeight:"bold",color:strong?"#a78bfa":"#505070",background:strong?"#a78bfa18":"transparent",padding:"2px 8px",borderRadius:4}}>
+                    <div key={c.key} style={{padding:"12px 16px",borderBottom:i<correlations.length-1?`1px solid ${D.bord}`:"none"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"4px"}}>
+                        <div style={{fontSize:"13px",color:D.t1,fontWeight:600}}>{keyLabel(c.key)}</div>
+                        <div style={{fontSize:"12px",fontWeight:600,color:strong?"#6B4FBB":D.t3,background:strong?"rgba(107,79,187,.08)":"transparent",padding:"2px 8px",borderRadius:"5px"}}>
                           r = {c.r.toFixed(2)}
                         </div>
                       </div>
-                      <div style={{fontSize:10,color:"#505070"}}>{insight}</div>
+                      <div style={{fontSize:"12px",color:D.t3}}>{insight}</div>
                     </div>
                   );
                 })}
@@ -1230,11 +2109,11 @@ function MetricDrillDown({ metric, allData, onClose }) {
           {/* Day-by-day table */}
           {plotData.length>0&&(
             <div>
-              <div style={{fontSize:10,color:"#505070",letterSpacing:"2px",marginBottom:10,fontWeight:600}}>RECENT DATA</div>
-              <div style={{background:"#0e0e18",borderRadius:8,border:"1px solid #1e1e2e",overflow:"hidden"}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #1a1a2e",background:"#06060c"}}>
-                  {["DATE","VALUE","CHANGE"].map(h=>(
-                    <div key={h} style={{fontSize:9,color:"#505070",letterSpacing:"1.5px",fontWeight:600}}>{h}</div>
+              <div style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:D.t3,marginBottom:"10px"}}>Recent Data</div>
+              <div style={{background:D.surf,borderRadius:"10px",border:`1px solid ${D.bord}`,overflow:"hidden"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"9px 16px",borderBottom:`1px solid ${D.bord}`,background:D.nav}}>
+                  {["Date","Value","Change"].map(h=>(
+                    <div key={h} style={{fontSize:"10.5px",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600,letterSpacing:".08em",textTransform:"uppercase",color:D.t3}}>{h}</div>
                   ))}
                 </div>
                 {[...plotData].reverse().slice(0,20).map((d,i,arr)=>{
@@ -1243,10 +2122,10 @@ function MetricDrillDown({ metric, allData, onClose }) {
                   const g2=chg!=null&&(metric.lowerBetter?chg<0:chg>0);
                   const b2=chg!=null&&(metric.lowerBetter?chg>0:chg<0);
                   return (
-                    <div key={d.date+i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"8px 14px",borderBottom:"1px solid #0a0a14",background:i%2===0?"transparent":"#0a0a12"}}>
-                      <div style={{fontSize:11,color:"#707090"}}>{d.date}</div>
-                      <div style={{fontSize:11,fontWeight:"bold",color:C.text1,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(d.val,metric.unit)}</div>
-                      <div style={{fontSize:11,color:g2?"#4ade80":b2?"#f87171":"#505070"}}>
+                    <div key={d.date+i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",padding:"9px 16px",borderBottom:i<Math.min([...plotData].length,20)-1?`1px solid ${D.bord}`:"none",background:i%2===0?"transparent":D.nav}}>
+                      <div style={{fontSize:"12.5px",color:D.t3}}>{d.date}</div>
+                      <div style={{fontSize:"12.5px",fontFamily:"'Jomolhari','Georgia',serif",color:D.t1}}>{summaryFmtVal(d.val,metric.unit)}</div>
+                      <div style={{fontSize:"12.5px",fontWeight:600,color:g2?D.green:b2?D.red:D.t3}}>
                         {chg!=null?`${g2?"↑":b2?"↓":"→"} ${summaryFmtVal(Math.abs(chg),metric.unit)}`:"—"}
                       </div>
                     </div>
@@ -1257,8 +2136,6 @@ function MetricDrillDown({ metric, allData, onClose }) {
           )}
         </div>
       </div>
-      <style>{`@keyframes ddSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}`}</style>
-    </div>
   );
 }
 
@@ -1276,10 +2153,128 @@ const DEFAULT_HABITS = [
   {id:"no_eating_out",  label:"No Eating Out",      icon:"🍔", avoid:true},
 ];
 
+// ─── COACHING SETTINGS (extracted — hooks cannot live in an IIFE) ─────────────
+function CoachingSettings({ apiURL, apiSecret, panel, inp, bFill, bOut }) {
+  const [cs, setCs] = React.useState({});
+  const [saving, setSaving] = React.useState(false);
+  const [testing, setTesting] = React.useState(false);
+  const [testResult, setTestResult] = React.useState("");
+  const [loaded, setLoaded] = React.useState(false);
+  React.useEffect(() => {
+    if (!apiURL || !apiSecret || loaded) return;
+    fetch(`${apiURL}/coaching/settings`, { headers: { "x-api-secret": apiSecret } })
+      .then(r => r.json()).then(d => { setCs(d); setLoaded(true); }).catch(() => {});
+  }, [apiURL, apiSecret]);
+  const save = async () => {
+    setSaving(true); setTestResult("");
+    try {
+      await fetch(`${apiURL}/coaching/settings`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-secret": apiSecret }, body: JSON.stringify({
+        anthropicKey: cs.anthropicKey || undefined,
+        email: cs.email,
+        resendKey: cs.resendKey || undefined,
+        ntfyTopic: cs.ntfyTopic,
+        enabled: cs.enabled !== false,
+      }) });
+      setTestResult("✓ Settings saved!");
+      setLoaded(false);
+    } catch (e) { setTestResult("⚠ Save failed: " + e.message); }
+    setSaving(false);
+  };
+  const testNow = async () => {
+    setTesting(true); setTestResult("⟳ Running coaching brief... (takes ~15s)");
+    try {
+      const r = await fetch(`${apiURL}/coaching/run`, { method: "POST", headers: { "x-api-secret": apiSecret } });
+      const j = await r.json();
+      if (j.error) setTestResult("⚠ " + j.error);
+      else setTestResult("✓ Done! Check your email & ntfy app. Brief preview:\n\n" + j.brief?.slice(0, 300) + "...");
+    } catch (e) { setTestResult("⚠ " + e.message); }
+    setTesting(false);
+  };
+  const isConfigured = cs.anthropicKeySet && cs.email;
+  return (
+    <div style={{ ...panel, marginBottom: "16px", borderColor: "#a78bfa40" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: "bold", letterSpacing: "2px", color: "#a78bfa" }}>🧠 DAILY COACHING BRIEF</div>
+          <div style={{ fontSize: "11px", color: C.dim, marginTop: "3px" }}>Claude analyzes your data every morning → email + iPhone push notification</div>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+          <div onClick={() => setCs(p => ({ ...p, enabled: !p.enabled }))} style={{ width: "36px", height: "20px", borderRadius: "10px", background: cs.enabled !== false ? "#a78bfa" : "#333", position: "relative", transition: "background 0.2s", cursor: "pointer" }}>
+            <div style={{ position: "absolute", top: "3px", left: cs.enabled !== false ? "19px" : "3px", width: "14px", height: "14px", borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+          </div>
+          <span style={{ fontSize: "11px", color: C.text2 }}>{cs.enabled !== false ? "Enabled" : "Disabled"}</span>
+        </label>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+        <div>
+          <div style={{ fontSize: "10px", color: C.text3, letterSpacing: "1px", marginBottom: "4px" }}>ANTHROPIC API KEY {cs.anthropicKeySet && <span style={{ color: "#4ade80" }}>✓ SET</span>}</div>
+          <input type="password" placeholder={cs.anthropicKeyHint || "sk-ant-api03-..."} value={cs.anthropicKey || ""}
+            onChange={e => setCs(p => ({ ...p, anthropicKey: e.target.value }))}
+            style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: "9px", color: C.dim, marginTop: "3px" }}>Get at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>console.anthropic.com</a></div>
+        </div>
+        <div>
+          <div style={{ fontSize: "10px", color: C.text3, letterSpacing: "1px", marginBottom: "4px" }}>COACHING EMAIL</div>
+          <input type="email" placeholder="you@example.com" value={cs.email || ""}
+            onChange={e => setCs(p => ({ ...p, email: e.target.value }))}
+            style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: "9px", color: C.dim, marginTop: "3px" }}>Where to send your daily brief</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "10px", color: C.text3, letterSpacing: "1px", marginBottom: "4px" }}>RESEND API KEY {cs.resendKeySet && <span style={{ color: "#4ade80" }}>✓ SET</span>} <span style={{ color: C.dim }}>(free email)</span></div>
+          <input type="password" placeholder={cs.resendKeySet ? "re_...already set" : "re_..."} value={cs.resendKey || ""}
+            onChange={e => setCs(p => ({ ...p, resendKey: e.target.value }))}
+            style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: "9px", color: C.dim, marginTop: "3px" }}>Free at <a href="https://resend.com" target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>resend.com</a> — 3k emails/month free</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "10px", color: C.text3, letterSpacing: "1px", marginBottom: "4px" }}>NTFY PUSH TOPIC <span style={{ color: C.dim }}>(iPhone push)</span></div>
+          <input type="text" placeholder="bodydata-yourname-1234" value={cs.ntfyTopic || ""}
+            onChange={e => setCs(p => ({ ...p, ntfyTopic: e.target.value }))}
+            style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
+          <div style={{ fontSize: "9px", color: C.dim, marginTop: "3px" }}>Free at <a href="https://ntfy.sh" target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>ntfy.sh</a> — install app, subscribe to this topic</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={save} disabled={saving} style={{ ...bFill("#a78bfa"), padding: "8px 20px", fontSize: "11px" }}>
+          {saving ? "SAVING..." : "💾 SAVE SETTINGS"}
+        </button>
+        <button onClick={testNow} disabled={testing || !isConfigured} title={!isConfigured ? "Set Anthropic key + email first" : ""} style={{ ...bOut("#a78bfa"), padding: "8px 20px", fontSize: "11px", opacity: isConfigured ? 1 : 0.4 }}>
+          {testing ? "RUNNING..." : "▶ TEST BRIEF NOW"}
+        </button>
+        <span style={{ fontSize: "10px", color: C.dim }}>Runs daily at 7 AM ET · <a href="https://apps.apple.com/app/ntfy/id1625stopping" target="_blank" rel="noreferrer" style={{ color: "#a78bfa" }}>Get ntfy for iPhone →</a></span>
+      </div>
+      {testResult && (
+        <div style={{ marginTop: "12px", padding: "12px", background: C.surf2, borderRadius: "6px", fontSize: "11px", color: testResult.startsWith("✓") ? C.text1 : "#f87171", whiteSpace: "pre-wrap", lineHeight: "1.6" }}>
+          {testResult}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view,setView]=useState("daily");
-  const [tab,setTab]=useState("summary");
+  const [tab,setTab]=useState(()=>{ try { const t=new URLSearchParams(window.location.search).get("tab"); return t==="automations"||t==="ask"?t:"kpis"; } catch { return "kpis"; } });   // ?tab= (e.g. back from connecting a service)
+  useEffect(()=>{ trackScreen(tab); },[tab]);
+  const [kpiRange,setKpiRange]=useState({p:"thismonth"});
+  const kr=useMemo(()=>dkRange(kpiRange),[kpiRange]);
+  const [kpiRangeOpen,setKpiRangeOpen]=useState(false);
+  const [kpiSearch,setKpiSearch]=useState("");
+  const [kpiDetail,setKpiDetail]=useState(null);
+  const [kpiOrder,setKpiOrder]=useState(()=>{try{return JSON.parse(localStorage.getItem("bt.kpi.order"))||{};}catch{return{};}});
+  useEffect(()=>{try{localStorage.setItem("bt.kpi.order",JSON.stringify(kpiOrder));}catch{}},[kpiOrder]);
+  // Press-and-drag reordering (mouse: drag; touch: hold ~0.3s, then drag)
+  const [drag,setDrag]=useState(null);              // {id,gid,x,y,offX,offY,w}
+  const dragRef=useRef({});
+  const boardRef=useRef(null);
+  const [navOpen,setNavOpen]=useState(false);
+  const [kpiHidden,setKpiHidden]=useState(()=>{try{return JSON.parse(localStorage.getItem("bt.kpi.hidden"))||[];}catch{return[];}});
+  const [kpiCustOpen,setKpiCustOpen]=useState(false);
+  const [kpiGroup,setKpiGroup]=useState("all");
+  const [activeSection,setActiveSection]=useState("body");
+  const scrollAreaRef=useRef(null);
   const [activeLLM,setActiveLLM]=useState("claude");
 
   // ── Notes / Journal — persisted to localStorage ──────────────────────────
@@ -1288,6 +2283,26 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("bt_notes")) || []; } catch { return []; }
   });
   useEffect(()=>{ localStorage.setItem("bt_notes", JSON.stringify(notes)); }, [notes]);
+  useEffect(()=>{ localStorage.setItem("bt.kpi.hidden", JSON.stringify(kpiHidden)); },[kpiHidden]);
+
+  // Close date picker / customize popover on outside click
+  useEffect(()=>{
+    if(!kpiRangeOpen&&!kpiCustOpen) return;
+    const handler=()=>{setKpiRangeOpen(false);setKpiCustOpen(false);};
+    document.addEventListener('click',handler);
+    return ()=>document.removeEventListener('click',handler);
+  },[kpiRangeOpen,kpiCustOpen]);
+
+  // Track active section via IntersectionObserver
+  useEffect(()=>{
+    if(tab!=="kpis") return;
+    const obs=new IntersectionObserver(entries=>{
+      entries.forEach(e=>{ if(e.isIntersecting) setActiveSection(e.target.dataset.section); });
+    },{threshold:0.3,rootMargin:"-80px 0px -60% 0px"});
+    document.querySelectorAll('[data-section]').forEach(el=>obs.observe(el));
+    return ()=>obs.disconnect();
+  },[tab,kpiDetail]);
+
   const [noteDraft,setNoteDraft]=useState({text:"",tags:[],date:""});
   const [noteFilter,setNoteFilter]=useState("all"); // "all" or a tag
   const addNote = () => {
@@ -1362,7 +2377,51 @@ export default function App() {
   const [openPhase,setOpenPhase]=useState(0);
   // API connector state
   const [apiURL,setApiURL]=useState(()=>localStorage.getItem("bt_api_url")||"https://biotrack-api-production.up.railway.app");
-  const [apiSecret,setApiSecret]=useState(()=>localStorage.getItem("bt_api_secret")||"8da2e9f068632f6b113688c222e09d5fae01c15121ea7afafe3d6931a884ba2a");
+  const [apiSecret,setApiSecret]=useState(()=>{ const v=localStorage.getItem("bt_api_secret"); return v&&v!=="lambo"?v:""; });
+  const [unlockDraft,setUnlockDraft]=useState("");
+  // Owner-only legacy tools (coach, meal planner, habits…) are hidden from everyone else
+  const [isOwner,setIsOwner]=useState(false);
+  useEffect(()=>{ if(!apiSecret) return; fetch(`${(apiURL||"").replace(/\/sync\/?$/,"")}/me`,{headers:{"x-api-secret":apiSecret}}).then(r=>r.ok?r.json():null).then(j=>setIsOwner(!!j?.user?.owner)).catch(()=>{}); },[apiURL,apiSecret]);
+  // Benchmarks cohort (sex + birth year) and crowd opt-in, stored with the dashboard prefs
+  const [benchProfile,setBenchProfile]=useState(null), [benchOptIn,setBenchOptIn]=useState(false);
+  const saveBench=useCallback(async(profile,optIn)=>{
+    setBenchProfile(profile); setBenchOptIn(optIn);
+    try{ await fetch(`${(apiURL||"").replace(/\/sync\/?$/,"")}/prefs`,{method:"POST",headers:{"x-api-secret":apiSecret,"Content-Type":"application/json"},body:JSON.stringify({profile,benchmarkOptIn:optIn})}); }catch{}
+  },[apiURL,apiSecret]);
+  // Profile (onboarding answers) + goal progress, shown on the KPI board
+  const [userProfile,setUserProfile]=useState(null);
+  const loadProfile=useCallback(async()=>{
+    if(!apiSecret) return;
+    try{ const r=await fetch(`${(apiURL||"").replace(/\/sync\/?$/,"")}/profile`,{headers:{"x-api-secret":apiSecret}}); if(r.ok) setUserProfile(await r.json()); }catch{}
+  },[apiURL,apiSecret]);
+  useEffect(()=>{ loadProfile(); },[loadProfile]);
+  // Custom KPI sections (created in Ask AI or Automations)
+  const [kpiSections,setKpiSections]=useState([]);
+  const loadSections=useCallback(async()=>{
+    if(!apiSecret) return;
+    try{ const r=await fetch(`${(apiURL||"").replace(/\/sync\/?$/,"")}/sections`,{headers:{"x-api-secret":apiSecret}}); if(r.ok) setKpiSections((await r.json()).sections||[]); }catch{}
+  },[apiURL,apiSecret]);
+  useEffect(()=>{ loadSections(); },[loadSections]);
+  // Card order + hidden KPIs live on the server so phone and desktop always match
+  const [prefsReady,setPrefsReady]=useState(false);
+  useEffect(()=>{
+    if(!apiSecret) return; let dead=false; setPrefsReady(false);
+    fetch(`${apiURL.replace(/\/sync\/?$/,"")}/prefs`,{headers:{"x-api-secret":apiSecret}})
+      .then(r=>r.ok?r.json():null)
+      .then(p=>{ if(dead) return;
+        if(p&&p.updatedAt){ setKpiOrder(p.kpiOrder||{}); setKpiHidden(p.kpiHidden||[]); setBenchProfile(p.profile||null); setBenchOptIn(!!p.benchmarkOptIn); }
+        setPrefsReady(true); })
+      .catch(()=>{ if(!dead) setPrefsReady(true); });
+    return ()=>{dead=true;};
+  },[apiSecret,apiURL]);
+  useEffect(()=>{
+    if(!prefsReady||!apiSecret) return;
+    const t=setTimeout(()=>{
+      fetch(`${apiURL.replace(/\/sync\/?$/,"")}/prefs`,{method:"POST",headers:{"x-api-secret":apiSecret,"Content-Type":"application/json"},
+        body:JSON.stringify({kpiOrder,kpiHidden})}).catch(()=>{});
+    },700);
+    return ()=>clearTimeout(t);
+  },[kpiOrder,kpiHidden,prefsReady,apiSecret,apiURL]);
   const [apiStatus,setApiStatus]=useState("idle");
   const [apiError,setApiError]=useState("");
   const [showApiSetup,setShowApiSetup]=useState(false);
@@ -1383,7 +2442,7 @@ export default function App() {
       // Fetch latest snapshot
       const r = await fetch(`${base}/latest`, { headers });
       if(r.status===401) { setApiStatus("error"); setApiError("Wrong secret key — check it matches Railway SECRET_KEY"); return; }
-      if(r.status===404) { setApiStatus("polling"); setApiError("Waiting for first iOS sync — open BioTrack Health app and tap Sync Now"); return; }
+      if(r.status===404) { setApiStatus("polling"); setApiError("Waiting for first iOS sync — open BodyData Health app and tap Sync Now"); return; }
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const latest = await r.json();
       setLiveData(mapImport(latest));
@@ -1391,7 +2450,7 @@ export default function App() {
       setApiError("");
 
       // Fetch history in background (non-blocking)
-      fetch(`${base}/history?days=3650`, { headers })
+      fetch(`${base}/history?days=20000`, { headers })
         .then(h => h.ok ? h.json() : null)
         .then(h => {
           if(h?.snapshots?.length) {
@@ -1421,6 +2480,73 @@ export default function App() {
     return () => clearInterval(pollRef.current);
   }, [apiURL, apiSecret, fetchFromAPI]);
 
+  const kpiBoard = useMemo(()=>{
+    if(tab!=="kpis") return null;
+    const allData=liveHistory.length>0?liveHistory:liveData?[liveData]:(apiSecret?[]:DEMO);
+    return buildKpiBoard(allData,kr,kpiSections);
+  },[tab,liveHistory,liveData,kr,kpiSections,apiSecret]);
+  boardRef.current = kpiBoard;
+  const benchDays = useMemo(()=>{
+    if(tab!=="benchmarks") return [];
+    const m=new Map();
+    const src=liveHistory.length>0?liveHistory:liveData?[liveData]:(apiSecret?[]:DEMO);
+    for(const d of [...src].sort((a,b)=>String(a._rx||"").localeCompare(String(b._rx||"")))){ const k=dayKey(d); if(k) m.set(k,{...(m.get(k)||{}),...d,date:k}); }
+    return [...m.values()];
+  },[tab,liveHistory,liveData,apiSecret]);
+  const reorderKpi = useCallback((gid, fromId, toId) => {
+    setKpiOrder(o => {
+      const board = boardRef.current; if (!board?.groups[gid]) return o;
+      const saved = o[gid] || []; const pos = id => { const k = saved.indexOf(id); return k < 0 ? 1e6 : k; };
+      const ids = board.groups[gid].map((c, k) => [c.id, k]).sort((a, b) => (pos(a[0]) - pos(b[0])) || (a[1] - b[1])).map(x => x[0]);
+      const fi = ids.indexOf(fromId), ti = ids.indexOf(toId); if (fi < 0 || ti < 0 || fi === ti) return o;
+      ids.splice(fi, 1); ids.splice(ti, 0, fromId);
+      return {...o, [gid]: ids};
+    });
+  }, []);
+  const dragStart = useCallback((e, id, gid, kind) => {
+    if (kind === "mouse" && e.button !== 0) return;
+    const pt = kind === "touch" ? e.touches[0] : e; if (!pt) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const d = dragRef.current = {id, gid, kind, sx: pt.clientX, sy: pt.clientY, offX: pt.clientX - r.left, offY: pt.clientY - r.top, w: r.width, active: false, last: id};
+    const activate = () => { d.active = true; setDrag({id, gid, x: d.sx, y: d.sy, offX: d.offX, offY: d.offY, w: d.w}); try { navigator.vibrate?.(12); } catch {} };
+    if (kind === "touch") d.timer = setTimeout(activate, 300);
+    let raf = 0;
+    const autoscroll = (y) => {
+      cancelAnimationFrame(raf); const el = scrollAreaRef.current; if (!el || !d.active) return;
+      const b = el.getBoundingClientRect(), edge = 70;
+      const v = y < b.top + edge ? -Math.ceil((b.top + edge - y) / 6) : y > b.bottom - edge ? Math.ceil((y - (b.bottom - edge)) / 6) : 0;
+      if (v) { el.scrollTop += v; raf = requestAnimationFrame(() => autoscroll(d.y)); }
+    };
+    const move = (ev) => {
+      const p = kind === "touch" ? ev.touches[0] : ev; if (!p) return;
+      if (!d.active) {
+        const dist = Math.hypot(p.clientX - d.sx, p.clientY - d.sy);
+        if (kind === "mouse" && dist > 6) activate();
+        else if (kind === "touch" && dist > 10) { clearTimeout(d.timer); end(); return; }   // it was a scroll
+        if (!d.active) return;
+      }
+      if (ev.cancelable) ev.preventDefault();
+      d.y = p.clientY;
+      setDrag(g => g && {...g, x: p.clientX, y: p.clientY});
+      const hit = document.elementFromPoint(p.clientX, p.clientY)?.closest?.("[data-kcard]");
+      const to = hit?.getAttribute("data-kcard");
+      if (to && to !== d.id && hit.getAttribute("data-gid") === d.gid && to !== d.last) { d.last = to; reorderKpi(d.gid, d.id, to); }
+      else if (to === d.id) d.last = d.id;
+      autoscroll(p.clientY);
+    };
+    const end = () => {
+      clearTimeout(d.timer); cancelAnimationFrame(raf);
+      window.removeEventListener(kind === "touch" ? "touchmove" : "mousemove", move);
+      window.removeEventListener(kind === "touch" ? "touchend" : "mouseup", end);
+      window.removeEventListener("touchcancel", end);
+      if (d.active) { d.suppress = true; setTimeout(() => { d.suppress = false; }, 80); }
+      d.active = false; setDrag(null);
+    };
+    window.addEventListener(kind === "touch" ? "touchmove" : "mousemove", move, {passive: false});
+    window.addEventListener(kind === "touch" ? "touchend" : "mouseup", end);
+    if (kind === "touch") window.addEventListener("touchcancel", end);
+  }, [reorderKpi]);
+
   const saveAPIConfig = (url, secret) => {
     localStorage.setItem("bt_api_url", url);
     localStorage.setItem("bt_api_secret", secret);
@@ -1445,7 +2571,7 @@ export default function App() {
     const todayInHistory = (liveHistory||[]).find(h => parseSyncDate(h.syncDate) === nowKey);
     if(todayInHistory) return { ...todayInHistory, ...(liveData && parseSyncDate(liveData.syncDate) === nowKey ? liveData : {}) };
     // Fall back to liveData even if stale (for KPI display)
-    return liveData ? { ...liveData } : DEMO[0];
+    return liveData ? { ...liveData } : {};
   })();
 
   const importJSON = () => {
@@ -1459,7 +2585,27 @@ export default function App() {
   // Build complete 30-day history — every non-null field for every day.
   // One structured block per day so the AI has the full picture.
   const buildHistory = useCallback((coachId) => {
-    const hist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
+    const rawHist = (liveHistory && liveHistory.length > 0 ? liveHistory : DEMO).slice(0, 30);
+    if (!rawHist.length) return "";
+
+    // Apply the same body-comp carry-forward suppression used in the table display.
+    // hist[0] = newest, hist[i+1] = older. If a value equals the next (older) day's value
+    // and no bodyCompMeasuredDate proves it was actually taken that day, it's carry-forward.
+    const BODY_CF = ["weight","bodyFat","fatMass","leanMass","bmi","fatMass","muscleMass","boneMass","waistCircumference"];
+    const hist = rawHist.map((h, i) => {
+      const older = rawHist[i + 1];
+      const patch = {};
+      for (const k of BODY_CF) {
+        const v = h[k];
+        if (typeof v !== "number") continue;
+        const mDate = h.bodyCompMeasuredDate;
+        const sDate = h.syncDate;
+        if (mDate && sDate && mDate !== sDate) { patch[k] = undefined; continue; }
+        if (!mDate && older && typeof older[k] === "number" && v === older[k]) { patch[k] = undefined; }
+      }
+      return Object.keys(patch).length ? { ...h, ...patch } : h;
+    });
+
     if (!hist.length) return "";
     const f1  = v => (v===null||v===undefined||isNaN(Number(v))) ? null : Number(v).toFixed(1);
     const fi  = v => (v===null||v===undefined||isNaN(Number(v))) ? null : String(Math.round(Number(v)));
@@ -1812,7 +2958,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
         {
           type: "document",
           source: { type: "base64", media_type: "text/plain", data: b64 },
-          title: "BioTrack — Last 30 Days Complete Biometric Data",
+          title: "BodyData — Last 30 Days Complete Biometric Data",
           context: "All sources: Hume Body Pod (body comp + segmental fat/muscle), Oura Ring (sleep + HRV + readiness), MyFitnessPal (nutrition), Apple Health (activity + steps), Fitbod (training + per-muscle-group volume). Goal: minimize body fat to 10%, preserve lean mass. Vegan athlete.",
         },
         { type: "text", text: prompt },
@@ -1822,7 +2968,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     }
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,messages:[{role:"user",content:userContent}]})});
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:2000,system:sys,messages:[{role:"user",content:userContent}]})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message); return j.content[0].text;
   };
   const callGPT = async (sys,prompt,key) => {
@@ -1860,7 +3006,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     if(!key) throw new Error("Enter your Anthropic API key to use Claude");
     const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,system:sys,
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:2000,system:sys,
         messages:messages.map(m=>({role:m.role,content:m.content}))})});
     const j=await r.json(); if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));
     return j.content[0].text;
@@ -1896,6 +3042,18 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
   useEffect(()=>{localStorage.setItem("bt_chat_threads",JSON.stringify(chatThreads));},[chatThreads]);
   const [chatDraft,setChatDraft]=useState({});
   const [chatLoading,setChatLoading]=useState({});
+
+  // ── Chat fullscreen ──────────────────────────────────────────────────────
+  const [chatFullscreen,setChatFullscreen]=useState(false);
+
+  // ── Floating AI Chat Bubble ──────────────────────────────────────────────
+  const [floatOpen,setFloatOpen]=useState(false);
+  const [floatThread,setFloatThread]=useState([]);
+  const [floatDraft,setFloatDraft]=useState("");
+  const [floatLoading,setFloatLoading]=useState(false);
+  const [floatStream,setFloatStream]=useState("");
+  const floatScrollRef=useRef(null);
+  useEffect(()=>{if(floatScrollRef.current)floatScrollRef.current.scrollTop=floatScrollRef.current.scrollHeight;},[floatThread,floatLoading,floatStream]);
   const [streamText,setStreamText]=useState({}); // { [threadKey]: string } — live streaming content
   const chatScrollRef = useRef(null);
 
@@ -1910,7 +3068,7 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,stream:true,system:sys,
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:2000,stream:true,system:sys,
         messages:messages.map(m=>({role:m.role,content:m.content}))})
     });
     if(!r.ok){const j=await r.json();throw new Error(j.error?.message||"API error");}
@@ -1981,6 +3139,32 @@ GOAL: Minimize body fat → 10%, preserve lean mass. Vegan athlete.`;
       setChatThreads(p=>({...p,[threadKey]:[...newThread,errMsg]}));
     }
     setChatLoading(p=>({...p,[threadKey]:false}));
+  };
+
+  const sendFloatChat = async (directMsg) => {
+    const msg=(directMsg||floatDraft).trim(); if(!msg||floatLoading) return;
+    if(!claudeKey){alert("Add your Claude API key in the AI Coach tab first.");return;}
+    const now=new Date();
+    const dateKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+    const userMsg={role:"user",content:msg,ts:now.toISOString()};
+    const newThread=[...floatThread,userMsg];
+    setFloatThread(newThread);
+    setFloatDraft("");
+    setFloatLoading(true);
+    setFloatStream("");
+    try {
+      const dataCtx=ctx("progress");
+      const sys=`You are BodyData AI — a world-class personal health and performance coach with access to the user's complete biometric, nutrition, sleep, and training data. Answer questions directly, be specific with numbers, and give actionable advice. Today is ${dateKey}.\n\n━━ CLIENT DATA SNAPSHOT ━━\n${dataCtx}`;
+      const historyMsgs=floatThread.map(m=>({role:m.role,content:m.content}));
+      const res=await callClaudeStream(sys,[...historyMsgs,{role:"user",content:msg}],(chunk)=>{setFloatStream(chunk);});
+      setFloatStream("");
+      const assistantMsg={role:"assistant",content:res,ts:new Date().toISOString()};
+      setFloatThread(p=>[...newThread,assistantMsg]);
+    } catch(e) {
+      setFloatStream("");
+      setFloatThread(p=>[...newThread,{role:"assistant",content:`⚠ ${e.message}`,ts:new Date().toISOString()}]);
+    }
+    setFloatLoading(false);
   };
 
   const COACHES = [
@@ -2156,10 +3340,10 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
         const todayCoachId = Object.entries(SCHEDULE).find(([,day])=>day===todayName)?.[0];
         const coachObj = todayCoachId ? COACHES.find(c=>c.id===todayCoachId) : null;
         // 1. Fire browser notification
-        new Notification("BioTrack Daily Coaching", {
+        new Notification("BodyData Daily Coaching", {
           body: coachObj
             ? `⚡ Auto-running ${coachObj.name} with your latest data...`
-            : "BioTrack is running your daily coaching session.",
+            : "BodyData is running your daily coaching session.",
           icon: "/favicon.ico",
           tag: "biotrack-coaching",
         });
@@ -2292,7 +3476,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
       const imgs=photos.map(p=>({type:"image",source:{type:"base64",media_type:p.mime,data:p.base64}}));
       if(!claudeKey) throw new Error("Enter your Anthropic API key in the AI Coach tab");
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":claudeKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,
           messages:[{role:"user",content:[...imgs,{type:"text",text:`Analyze body composition. BF ${today.bodyFat}%, Weight ${today.weight}lbs. Assess fat distribution, muscle development, target areas, give 3 specific adjustments.`}]}]})});
       const j=await r.json(); if(j.error)throw new Error(j.error.message);
       setPhotoAnalysis(j.content[0].text);
@@ -2313,6 +3497,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
     if (summaryOrder) localStorage.setItem("bt_summary_order", JSON.stringify(summaryOrder));
   }, [summaryOrder]);
   const summaryDragRef = useRef(null);
+  const [summaryEdit, setSummaryEdit] = useState(false);
   // ── Daily Habits ──────────────────────────────────────────────────────────
   const [habitData,setHabitData]=useState(()=>{
     try { return JSON.parse(localStorage.getItem("bt_habit_data")) || {}; } catch { return {}; }
@@ -2350,7 +3535,7 @@ Be specific, be enthusiastic, and reference exact numbers from my data. Make me 
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": claudeKey, "anthropic-dangerous-direct-browser-access": "true" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 500,
           messages: [{
             role: "user",
@@ -2422,10 +3607,10 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
   };
 
   // ─ Shared style objects
-  const panel={background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"6px",padding:"16px"};
-  const inp={background:"#0a0a16",border:`1px solid ${C.bord2}`,color:C.text1,padding:"8px 12px",fontSize:"13px",borderRadius:"4px",outline:"none"};
-  const bFill=(col)=>({padding:"9px 20px",background:col,border:"none",color:"#000",cursor:"pointer",fontSize:"11px",letterSpacing:"2px",borderRadius:"3px",fontWeight:"bold"});
-  const bOut=(col)=>({padding:"9px 14px",background:"transparent",border:`1px solid ${col}`,color:col,cursor:"pointer",fontSize:"11px",letterSpacing:"1px",borderRadius:"3px"});
+  const panel={background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"12px",padding:"20px"};
+  const inp={background:C.surf,border:`1px solid ${C.bord}`,color:C.text1,padding:"8px 12px",fontSize:"13px",borderRadius:"8px",outline:"none",fontFamily:"'Inter',system-ui,sans-serif"};
+  const bFill=(col)=>({padding:"9px 20px",background:col,border:"none",color:"#fff",cursor:"pointer",fontSize:"12px",letterSpacing:"0.5px",borderRadius:"8px",fontWeight:"600",fontFamily:"'Inter',system-ui,sans-serif"});
+  const bOut=(col)=>({padding:"8px 16px",background:"transparent",border:`1px solid ${C.bord}`,color:C.text2,cursor:"pointer",fontSize:"12px",letterSpacing:"0.3px",borderRadius:"8px",fontFamily:"'Inter',system-ui,sans-serif"});
   const TH={padding:"6px 6px",textAlign:"right",fontSize:"11px",color:C.text1,letterSpacing:"1px",borderBottom:`1px solid ${C.bord}`,whiteSpace:"nowrap",fontWeight:"600",opacity:0.8};
   const TD={padding:"6px 6px",textAlign:"right",borderBottom:`1px solid ${C.surf2}`,whiteSpace:"normal",wordBreak:"break-word",verticalAlign:"middle"};
 
@@ -2465,48 +3650,321 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
   );
 
   return (
-    <div style={{minHeight:"100vh",background:C.bg,color:C.text1,fontFamily:"'Courier New',monospace",fontSize:"13px"}}>
+    <div style={{display:"flex",height:"100vh",background:C.bg,color:C.text1,fontFamily:"'Inter',system-ui,-apple-system,sans-serif",fontSize:"14px",overflow:"hidden",WebkitFontSmoothing:"antialiased"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Jomolhari&display=swap');
+        .bt-num{font-family:'Inter',system-ui,sans-serif;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+        .bt-eyebrow{font-family:'Inter',system-ui,sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#5468FF}
+        .bt-card{background:#fff;border:1px solid ${C.bord};border-radius:14px}
+        .bt-ctl{height:38px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;background:#fff;border:1px solid ${C.bord};border-radius:9px;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0;color:${C.text1};font-family:'Inter',system-ui,sans-serif}
+        .bt-ctl:hover{border-color:${C.bord2}}
+        .bt-pop{position:absolute;z-index:30;background:#fff;border:1px solid ${C.bord};border-radius:12px;box-shadow:0 12px 30px rgba(43,46,74,.13)}
+        .bt-menuitem{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:${C.text1};border:0;background:transparent;width:100%;text-align:left;font-family:'Inter',system-ui,sans-serif}
+        .bt-menuitem:hover{background:#F4F3EF}
+        .bt-md{font-size:14px;line-height:1.6;color:${C.text1}}
+        .bt-md h1,.bt-md h2,.bt-md h3{font-family:'Inter',system-ui,sans-serif;margin:16px 0 6px;line-height:1.3}
+        .bt-md h1{font-size:18px}.bt-md h2{font-size:16px}.bt-md h3{font-size:14.5px}
+        .bt-md p{margin:0 0 10px}.bt-md ul,.bt-md ol{margin:0 0 10px;padding-left:22px}.bt-md li{margin:3px 0}
+        .bt-md table{border-collapse:collapse;margin:8px 0 12px;font-size:13px;display:block;overflow-x:auto}
+        .bt-md th,.bt-md td{border:1px solid #E7E8F1;padding:6px 10px;text-align:left}.bt-md th{background:#F7F6F3}
+        .bt-md code{background:#F4F3EF;padding:1px 5px;border-radius:4px;font-size:12.5px}
+        .bt-md a{color:${C.teal}}.bt-md>*:last-child{margin-bottom:0}
+        .bt-btn{height:34px;padding:0 14px;border-radius:9px;border:1px solid ${C.bord};background:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;color:${C.text1};font-family:'Inter',system-ui,sans-serif}
+        .bt-search{height:38px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#fff;border:1px solid ${C.bord};border-radius:9px;color:${C.text3};width:250px;min-width:160px;flex:0 1 250px}
+        .bt-search input{border:0;outline:0;background:transparent;font-size:13px;flex:1;min-width:0;color:${C.text1};font-family:'Inter',system-ui,sans-serif}
+        .bt-date{display:block;width:100%;margin-top:4px;height:34px;border:1px solid ${C.bord};border-radius:8px;padding:0 8px;background:#fff;font:inherit;color:${C.text1}}
+        .bt-navitem{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:8px;cursor:pointer;color:${C.text2};font-size:13.5px;font-weight:500;border:0;background:transparent;width:100%;text-align:left;white-space:nowrap;overflow:hidden;transition:background .1s;font-family:'Inter',system-ui,sans-serif}
+        .bt-navitem:hover{background:#F1F2F8}
+        .bt-navitem.on{background:#5468FF;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(84,104,255,.28)}
+        .bt-kcard{background:#fff;border:1px solid ${C.bord};border-radius:14px;padding:14px 15px 12px;cursor:pointer;position:relative;transition:box-shadow .15s,border-color .15s;min-width:0;display:flex;flex-direction:column;flex:1}
+        .bt-kcard:hover{box-shadow:0 6px 20px rgba(43,46,74,.06);border-color:${C.bord2}}
+        .bt-chipbtn{height:30px;padding:0 12px;border-radius:20px;border:1px solid ${C.bord};background:#fff;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:'Inter',system-ui,sans-serif}
+        .bt-chipbtn.on{background:${C.text1};color:#F8F9FC;border-color:${C.text1}}
+        .bt-dragcell{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+        @media (hover:hover){.bt-dragcell{cursor:grab}.bt-dragcell:active{cursor:grabbing}}
+        .bt-burger{display:none;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid ${C.bord};border-radius:9px;background:#fff;color:${C.text1};cursor:pointer;flex-shrink:0;padding:0}
+        .bt-scrim{display:none}
+        .bt-mxburger{display:none !important}
+        @media (max-width:768px){
+          .bt-side{position:fixed;top:0;bottom:0;left:0;z-index:1500;transform:translateX(-105%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.18)}
+          .bt-side.open{transform:none}
+          .bt-scrim{display:block;position:fixed;inset:0;background:rgba(43,46,74,.35);z-index:1400}
+          .bt-burger{display:inline-flex}
+          .bt-topbar{padding:10px 16px !important;flex-wrap:wrap}
+          .bt-topctl{width:100%;justify-content:flex-start !important}
+          .bt-topctl .bt-search{flex:1 1 100%}
+          .bt-pad{padding-left:16px !important;padding-right:16px !important}
+          .bt-benchgrid,.bt-bench{grid-template-columns:1fr !important}
+          .bt-mx{grid-template-columns:1fr !important}
+          .bt-mxnav{display:none}.bt-mxnav.open{display:block;position:static !important;max-height:60vh !important;border-right:0 !important;border-bottom:1px solid #E7E8F1}
+          .bt-mxburger{display:inline-flex !important}
+          .bt-mxcmp{grid-template-columns:repeat(3,minmax(0,1fr)) !important;row-gap:14px}
+          .bt-benchgrid>div:first-child{position:static !important}
+          .bt-hide-sm{display:none}
+        }
+        @keyframes bt-pulse{0%,100%{opacity:1}50%{opacity:.4}}
+      `}</style>
 
-      {/* ── HEADER */}
-      <div style={{background:"#08080f",borderBottom:`1px solid ${C.bord}`,padding:"10px 14px"}}>
-        {/* Top row: logo + status + refresh */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"10px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-            <div style={{fontSize:"16px",fontWeight:"900",letterSpacing:"4px",color:"#00ff9d"}}>⬡ BIOTRACK</div>
-            {liveData ? (
-              <div style={{display:"flex",alignItems:"center",gap:"5px",background:"#00ff9d15",border:"1px solid #00ff9d40",borderRadius:"4px",padding:"3px 8px"}}>
-                <div style={{width:"5px",height:"5px",borderRadius:"50%",background:"#00ff9d",animation:"pulse 2s infinite"}}/>
-                <span style={{fontSize:"9px",color:"#00ff9d",letterSpacing:"1.5px"}}>LIVE · {liveData.syncDate} {liveData.syncTime}</span>
-              </div>
-            ) : (
-              <div onClick={()=>setTab("sync")} style={{fontSize:"9px",color:"#fbbf24",letterSpacing:"1.5px",cursor:"pointer",background:"#fbbf2412",border:"1px solid #fbbf2440",borderRadius:"4px",padding:"3px 8px"}}>
-                ◉ TAP TO CONNECT
-              </div>
-            )}
-          </div>
-          <button onClick={()=>window.location.reload()} style={{background:"transparent",border:`1px solid ${C.bord2}`,color:C.text3,cursor:"pointer",fontSize:"11px",borderRadius:"3px",padding:"4px 10px",fontFamily:"'Courier New',monospace"}}>↻</button>
+      {/* ── SIDEBAR (slides in from ☰ on phones) */}
+      {navOpen&&<div className="bt-scrim" onClick={()=>setNavOpen(false)}/>}
+      <div className={"bt-side"+(navOpen?" open":"")} style={{width:"224px",flexShrink:0,background:C.nav,borderRight:`1px solid ${C.bord}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{padding:"14px 10px 14px",display:"flex",alignItems:"center",gap:"9px"}}>
+          <div style={{width:"26px",height:"26px",borderRadius:"7px",background:C.teal,color:"#F8F9FC",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:"700",fontSize:"13px",flexShrink:0}}>B</div>
+          <span style={{fontFamily:"'Inter',system-ui,sans-serif",fontWeight:"700",fontSize:"14px",flex:1,whiteSpace:"nowrap",color:C.text1}}>BodyData</span>
+          {liveData&&<div style={{width:"7px",height:"7px",borderRadius:"50%",background:"#1F9D6B",flexShrink:0,animation:"bt-pulse 2s infinite"}}/>}
         </div>
-        {/* KPI strip — horizontally scrollable on mobile */}
-        <div style={{display:"flex",gap:"16px",overflowX:"auto",WebkitOverflowScrolling:"touch",paddingBottom:"2px",scrollbarWidth:"none"}}>
-          <style>{`.kpi-strip::-webkit-scrollbar{display:none}`}</style>
-          {kpis.map(k=>(
-            <div key={k.l} style={{textAlign:"center",flexShrink:0}}>
-              <div style={{fontSize:"15px",fontWeight:"bold",color:k.c}}>{k.v}</div>
-              <div style={{fontSize:"9px",color:C.text1,letterSpacing:"1px",opacity:0.7}}>{k.l}</div>
-            </div>
-          ))}
+        <div style={{flex:1,overflowY:"auto",padding:"4px 10px 14px"}}>
+          {!(apiSecret&&!liveHistory.length&&!liveData)&&<div className="bt-eyebrow" style={{padding:"8px 10px 6px",fontSize:"9.5px"}}>Health Analytics</div>}
+          {[
+            {gid:"body",        label:"Body Composition"},
+            {gid:"segmental",   label:"Segmental Fat"},
+            {gid:"sleep",       label:"Sleep & Recovery"},
+            {gid:"nutrition",   label:"Nutrition"},
+            {gid:"mealTiming",  label:"Meal Timing"},
+            {gid:"activity",    label:"Activity"},
+            {gid:"training",    label:"Training"},
+            {gid:"measurements",label:"Measurements"},
+          ].filter(item=>!(apiSecret&&!liveHistory.length&&!liveData)&&!kpiBoard?.emptyGroups?.has(item.gid)).map(item=>{
+            const isActive=tab==="kpis"&&activeSection===item.gid;
+            return (
+              <button key={item.gid}
+                onClick={()=>{
+                  setTab("kpis");setNavOpen(false);
+                  setKpiDetail(null);
+                  const el=document.getElementById("section-"+item.gid);
+                  if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+                  setActiveSection(item.gid);
+                }}
+                className={"bt-navitem"+(isActive?" on":"")}>
+                {item.label}
+              </button>
+            );
+          })}
+          <div className="bt-eyebrow" style={{padding:"12px 10px 6px",fontSize:"9.5px"}}>Tools</div>
+          {[
+            {id:"metrics",  label:"Metrics"},
+            {id:"ask",      label:"Ask AI"},
+            {id:"automations",label:"Automations"},
+            ...(Object.keys(BENCH_REF).length?[{id:"benchmarks",label:"Benchmarks"}]:[]),
+            {id:"profile",  label:"Profile & goal"},
+            {id:"feedback", label:"Feedback"},
+            {id:"manual",   label:"Manual Entry"},
+            {id:"sync",     label:"Sync"},
+            ...(isOwner?[
+            {id:"coach",    label:"AI Coach"},
+            {id:"meals",    label:"Meal Planner"},
+            {id:"habits",   label:"Habits"},
+            {id:"log",      label:"Log"},
+            {id:"workout",  label:"Workout"},
+            {id:"notes",    label:"Notes"},
+            {id:"photos",   label:"Photos"},
+            {id:"summary",  label:"Summary"},
+            {id:"dashboard",label:"Dashboard"}]:[]),
+          ].map(item=>{
+            const isActive=tab===item.id;
+            return (
+              <button key={item.id} onClick={()=>{setTab(item.id);setNavOpen(false);}}
+                className={"bt-navitem"+(isActive?" on":"")}>
+                <span style={{flex:1}}>{item.label}</span>
+                {item.id==="sync"&&liveData&&<span style={{width:"6px",height:"6px",borderRadius:"50%",background:"#1F9D6B",flexShrink:0}}/>}
+              </button>
+            );
+          })}
         </div>
+        <button onClick={()=>window.location.reload()} className="bt-navitem" style={{margin:"0 10px 10px",width:"auto"}}>
+          ↻ Refresh data
+        </button>
       </div>
 
-      {/* ── NAV — horizontally scrollable, no visible scrollbar */}
-      <div style={{background:"#07070e",borderBottom:`1px solid ${C.bord}`,display:"flex",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
-        <style>{`nav-tabs::-webkit-scrollbar{display:none}`}</style>
-        {[["summary","📈 SUMMARY"],["dashboard","📊 DASHBOARD"],["habits","✅ HABITS"],["coach","🧠 AI COACH"],["log","📚 LOG"],["workout","💪 WORKOUT"],["notes","📓 NOTES"],["photos","📷 PHOTOS"],["manual","✏️ MANUAL"],["sync","⚡ SYNC"]].map(([id,l])=>(
-          <button key={id} onClick={()=>setTab(id)} style={{padding:"11px 16px",background:"none",border:"none",borderBottom:`2px solid ${tab===id?"#00ff9d":"transparent"}`,color:tab===id?"#00ff9d":C.text3,cursor:"pointer",fontSize:"10px",letterSpacing:"1.5px",whiteSpace:"nowrap",transition:"color 0.15s",flexShrink:0}}>
-            {l}{id==="sync"&&liveData&&<span style={{color:"#00ff9d",marginLeft:"4px"}}>●</span>}
+      {/* ── MAIN CONTENT */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {/* Top bar */}
+        <div className="bt-topbar" style={{background:C.bg,borderBottom:`1px solid ${C.bord}`,padding:"10px 28px",display:"flex",alignItems:"center",gap:"12px",flexShrink:0}}>
+          <button className="bt-burger" aria-label="Menu" onClick={()=>setNavOpen(true)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
           </button>
-        ))}
-      </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="bt-eyebrow" style={{marginBottom:"2px"}}>
+              {tab==="kpis"?"Health KPIs":tab==="coach"?"Tools":tab==="meals"?"Tools":"Tools"}
+            </div>
+            <div style={{fontFamily:"'Inter',system-ui,sans-serif",fontWeight:"700",fontSize:"20px",lineHeight:1.2,color:C.text1}}>
+              {tab==="kpis"?"All Health KPIs"
+                :tab==="ask"?"Ask AI":tab==="metrics"?"Metrics":tab==="automations"?"Automations":tab==="benchmarks"?"Benchmarks":tab==="profile"?"Profile & goal":tab==="feedback"?"Feedback":tab==="coach"?"AI Coach":tab==="meals"?"Meal Planner":tab==="habits"?"Habits"
+                :tab==="log"?"Log":tab==="workout"?"Workout":tab==="notes"?"Notes"
+                :tab==="photos"?"Photos":tab==="manual"?"Manual Entry":tab==="sync"?"Sync & Connect"
+                :tab==="summary"?"Summary":"Dashboard"}
+            </div>
+            {tab==="kpis"&&liveData&&<div style={{fontSize:"12px",color:C.text3,marginTop:"1px"}}>
+              Last sync {liveData.syncDate}{liveData.syncTime?` · ${liveData.syncTime}`:""}
+            </div>}
+          </div>
+          {tab==="kpis"&&(
+            <div className="bt-topctl" style={{display:"flex",justifyContent:"flex-end",gap:"10px",flexWrap:"wrap",flexShrink:0}}>
+              <label className="bt-search">
+                <IcSearch/>
+                <input value={kpiSearch} onChange={e=>setKpiSearch(e.target.value)} placeholder="Search KPIs"/>
+              </label>
+              <div style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
+                <button className="bt-ctl" onClick={()=>{setKpiCustOpen(o=>!o);setKpiRangeOpen(false);}}>
+                  <IcSliders/>Customize
+                  {kpiHidden.length>0&&<span style={{background:C.teal,color:"#fff",fontSize:"10.5px",fontWeight:700,borderRadius:"10px",padding:"1px 6px"}}>{kpiHidden.length} hidden</span>}
+                </button>
+                {kpiCustOpen&&(()=>{
+                  const ALLG=[...GROUPS,...(kpiBoard?.extraGroups||[])];
+                  const total=ALLG.reduce((a,g)=>a+g.rows.length,0);
+                  const shown=ALLG.reduce((a,g)=>a+g.rows.filter(r=>!kpiHidden.includes(r.k)).length,0);
+                  return (
+                    <div className="bt-pop" style={{top:"44px",right:0,width:"340px",maxHeight:"70vh",display:"flex",flexDirection:"column"}}>
+                      <div style={{padding:"14px 16px 10px",borderBottom:"1px solid #EEF0F6",display:"flex",alignItems:"center",gap:"8px"}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:600,fontSize:"14px",color:C.text1}}>Customize dashboard</div>
+                          <div style={{fontSize:"12px",color:C.text3}}>{shown} of {total} KPIs shown</div>
+                        </div>
+                        <button className="bt-btn" onClick={()=>setKpiHidden([])}>Show all</button>
+                      </div>
+                      <div style={{overflow:"auto",padding:"6px 10px 12px"}}>
+                        {ALLG.map(g=>{
+                          const keys=g.rows.map(r=>r.k);
+                          const allOn=keys.every(k=>!kpiHidden.includes(k));
+                          return (
+                            <div key={g.id} style={{marginTop:"10px"}}>
+                              <div style={{display:"flex",alignItems:"center",padding:"0 6px 4px"}}>
+                                <span className="bt-eyebrow" style={{flex:1}}>{g.name}</span>
+                                <button onClick={()=>setKpiHidden(h=>allOn?[...new Set([...h,...keys])]:h.filter(k=>!keys.includes(k)))}
+                                  style={{border:0,background:"none",color:C.teal,fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{allOn?"Hide all":"Show all"}</button>
+                              </div>
+                              {g.rows.map(r=>{
+                                const on=!kpiHidden.includes(r.k);
+                                return (
+                                  <button key={r.k} className="bt-menuitem" aria-pressed={on}
+                                    onClick={()=>setKpiHidden(h=>on?[...h,r.k]:h.filter(x=>x!==r.k))}>
+                                    <span style={{flex:1,color:on?C.text1:C.text3}}>{r.l}</span>
+                                    <span style={{width:"30px",height:"18px",borderRadius:"10px",background:on?C.teal:"#D9D7D1",position:"relative",flexShrink:0}}>
+                                      <span style={{position:"absolute",top:"2px",left:on?"14px":"2px",width:"14px",height:"14px",borderRadius:"50%",background:"#fff",transition:"left .15s"}}/>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+              <div style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
+                <button className="bt-ctl" onClick={()=>{setKpiRangeOpen(o=>!o);setKpiCustOpen(false);}}>
+                  <IcCal/>{dkLabel(kpiRange)}
+                  <span className="bt-hide-sm" style={{color:C.text3,fontWeight:400}}>· {fmtSpan(kr.a,kr.b)}</span>
+                  <span style={{color:C.text3,display:"flex"}}><IcChev/></span>
+                </button>
+                {kpiRangeOpen&&(
+                  <div className="bt-pop" style={{top:"44px",right:0,width:"min(440px,calc(100vw - 32px))",display:"flex",flexWrap:"wrap"}}>
+                    <div style={{padding:"6px",borderRight:"1px solid #EEF0F6",flex:"1 1 170px"}}>
+                      {DK_PRESETS.map(([k,l])=>(
+                        <button key={k} className="bt-menuitem" onClick={()=>{setKpiRange({p:k});setKpiRangeOpen(false);setKpiDetail(null);}}>
+                          <span style={{flex:1}}>{l}</span>
+                          {kpiRange.p===k&&<span style={{color:C.teal,fontWeight:700}}>✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{padding:"14px",flex:"1 1 200px",display:"flex",flexDirection:"column",gap:"10px"}}>
+                      <div className="bt-eyebrow">Custom range</div>
+                      <label style={{fontSize:"12px",color:"#7A80A6"}}>From
+                        <input type="date" className="bt-date" value={kr.a} max={todayYmd()}
+                          onChange={e=>{if(e.target.value){setKpiRange({p:"custom",a:e.target.value,b:kr.b});setKpiRangeOpen(false);}}}/>
+                      </label>
+                      <label style={{fontSize:"12px",color:"#7A80A6"}}>To
+                        <input type="date" className="bt-date" value={kr.b} max={todayYmd()}
+                          onChange={e=>{if(e.target.value){setKpiRange({p:"custom",a:kr.a,b:e.target.value});setKpiRangeOpen(false);}}}/>
+                      </label>
+                      <div style={{fontSize:"11.5px",color:C.text3,lineHeight:1.45}}>
+                        Compared with {kr.cmpLbl}: {fmtSpan(kr.ca,kr.cb)}.<br/>{daysIncl(kr.a,kr.b)<=45?"Daily trend.":"Monthly trend."}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Content scroll */}
+        <div ref={scrollAreaRef} style={{flex:1,overflowY:"auto",background:C.bg}}>
+
+      {/* ══════════ KPI GRID TAB ══════════ */}
+      {tab==="kpis"&&kpiBoard&&(()=>{
+        if(kpiDetail){
+          const c=kpiBoard.byId[kpiDetail.id];
+          if(c) return <BtKpiDetail c={c} r={kr} rangeLbl={`${dkLabel(kpiRange)} · ${fmtSpan(kr.a,kr.b)}`} onBack={()=>setKpiDetail(null)}/>;
+        }
+        const q=kpiSearch.trim().toLowerCase();
+        return (
+          <div className="bt-pad" style={{padding:"18px 28px 28px",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <div style={{fontFamily:"'Inter',system-ui,sans-serif",fontSize:"18px",fontWeight:700,color:C.text1}}>Health performance</div>
+            <div style={{fontSize:"12.5px",color:C.text3,marginTop:"2px"}}>
+              {dkLabel(kpiRange)} · {fmtSpan(kr.a,kr.b)} · compared with {kr.cmpLbl} · click any KPI for its full history · hold and drag to rearrange
+            </div>
+            {apiSecret&&!liveHistory.length&&!liveData&&(
+              <div className="bt-card" style={{marginTop:"16px",padding:"18px 20px"}}>
+                <b style={{color:C.text1,fontSize:"15px"}}>No data yet</b>
+                <div style={{fontSize:"13px",color:C.text2,marginTop:"6px",lineHeight:1.55}}>Your board fills in as soon as data arrives. Two ways to start:<br/>
+                  1. <b>iPhone:</b> install the BodyData app and allow Apple Health. Your full history comes in on the first sync.<br/>
+                  2. <b>Upload a file:</b> a lab report, DEXA scan or an export from MyFitnessPal, Strava, WHOOP and others.</div>
+                <div style={{display:"flex",gap:"8px",marginTop:"12px",flexWrap:"wrap"}}>
+                  <button className="bt-btn" onClick={()=>setTab("automations")} style={{background:C.teal,borderColor:C.teal,color:"#fff"}}>Upload a file</button>
+                  <button className="bt-btn" onClick={()=>setTab("ask")}>Ask AI how to connect a device</button>
+                </div>
+              </div>)}
+            {userProfile&&!userProfile.profile?.completedAt&&(
+              <button onClick={()=>setTab("profile")} className="bt-card" style={{display:"flex",alignItems:"center",gap:"12px",width:"100%",marginTop:"16px",padding:"14px 18px",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                <span style={{fontSize:"20px"}}>🎯</span>
+                <span style={{flex:1}}><b style={{color:C.text1,fontSize:"14px"}}>Personalize BodyData</b><br/><span style={{fontSize:"12.5px",color:C.text3}}>Set your goal, target and apps (60 seconds). Your board, benchmarks and AI coach adapt to it.</span></span>
+                <span style={{color:C.teal,fontWeight:600,fontSize:"13px"}}>Start →</span>
+              </button>)}
+            <GoalCard goal={userProfile?.goal} onEdit={()=>setTab("profile")}/>
+            {(()=>{ const gids=userProfile?.profile?.goals?.length?userProfile.profile.goals:userProfile?.profile?.goal?[userProfile.profile.goal]:[];
+              const pri=[...new Set(gids.flatMap(id=>userProfile?.options?.goals?.find(x=>x.id===id)?.groups||[]))];   // same order the iPhone uses (server-defined)   // same order the iPhone uses (server-defined)
+              const rank=id=>{const i=pri.indexOf(id);return i<0?99:i;};
+              return [...GROUPS,...kpiBoard.extraGroups].map((g,i)=>[g,i]).sort((a,b)=>(rank(a[0].id)-rank(b[0].id))||(a[1]-b[1])).map(x=>x[0]); })().map(g=>{
+              const saved=kpiOrder[g.id]||[];
+              const pos=id=>{const i=saved.indexOf(id);return i<0?1e6:i;};
+              const cards=kpiBoard.groups[g.id].map((c,i)=>[c,i]).sort((a,b)=>(pos(a[0].id)-pos(b[0].id))||(a[1]-b[1])).map(x=>x[0])
+                .filter(c=>!kpiHidden.includes(c.k)&&(!q||c.label.toLowerCase().includes(q)));
+              if(!cards.length||kpiBoard.emptyGroups?.has(g.id)) return null;
+              return (
+                <div key={g.id} id={"section-"+g.id} data-section={g.id} style={{marginTop:"26px",scrollMarginTop:"16px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"12px",marginBottom:"12px",flexWrap:"wrap"}}>
+                    <span style={{fontFamily:"'Inter',system-ui,sans-serif",fontSize:"12px",fontWeight:700,letterSpacing:".09em",textTransform:"uppercase",color:C.text1}}>{g.name}</span>
+                    {(GROUP_DESC[g.id]||g.desc)&&<span style={{fontSize:"12px",color:C.text3}}>{GROUP_DESC[g.id]||g.desc}</span>}
+                    <span style={{flex:1,height:"1px",background:C.bord,minWidth:"20px"}}/>
+                    {saved.length>0&&<button onClick={()=>setKpiOrder(o=>{const n={...o};delete n[g.id];return n;})}
+                      style={{border:0,background:"none",color:C.teal,fontSize:"11.5px",fontWeight:600,cursor:"pointer",padding:0,fontFamily:"inherit"}}>Reset order</button>}
+                    <span style={{fontSize:"11.5px",color:C.text3}}>{cards.length} metrics</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(260px,100%),1fr))",gap:"14px"}}>
+                    {cards.map(c=>(
+                      <div key={c.id} data-kcard={c.id} data-gid={g.id}
+                        onMouseDown={e=>dragStart(e,c.id,g.id,"mouse")}
+                        onTouchStart={e=>dragStart(e,c.id,g.id,"touch")}
+                        onContextMenu={e=>{ if(drag) e.preventDefault(); }}
+                        onClickCapture={e=>{ if(dragRef.current.suppress){ e.stopPropagation(); e.preventDefault(); } }}
+                        className="bt-dragcell"
+                        style={{display:"flex",opacity:drag?.id===c.id?.25:1,transition:"opacity .15s"}}>
+                        <div style={{flex:1,display:"flex",minWidth:0}}>
+                          <BtKpiCard c={c} cmpLbl={kr.cmpLbl}
+                            onOpen={()=>{setKpiDetail({id:c.id});if(scrollAreaRef.current)scrollAreaRef.current.scrollTop=0;}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ══════════ SYNC TAB ══════════ */}
       {tab==="sync" && (
@@ -2526,7 +3984,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 <div style={{fontSize:"12px",color:C.text2,lineHeight:"1.7"}}>
                   {apiStatus==="live" ? `Polling every 2 min · Last sync: ${liveData?.syncDate} ${liveData?.syncTime}` :
                    apiStatus==="error" ? apiError :
-                   apiStatus==="polling" ? "API connected · Open BioTrack Health on iPhone and tap Sync Now" :
+                   apiStatus==="polling" ? "API connected · Open BodyData Health on iPhone and tap Sync Now" :
                    "Enter your Railway API URL and secret key to enable automatic sync"}
                 </div>
               </div>
@@ -2614,110 +4072,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           </div>
 
           {/* ── Daily Coaching Settings ── */}
-          {(()=>{
-            const [cs,setCs]=React.useState({});
-            const [saving,setSaving]=React.useState(false);
-            const [testing,setTesting]=React.useState(false);
-            const [testResult,setTestResult]=React.useState("");
-            const [loaded,setLoaded]=React.useState(false);
-            React.useEffect(()=>{
-              if(!apiURL||!apiSecret||loaded) return;
-              fetch(`${apiURL}/coaching/settings`,{headers:{"x-api-secret":apiSecret}})
-                .then(r=>r.json()).then(d=>{ setCs(d); setLoaded(true); }).catch(()=>{});
-            },[apiURL,apiSecret]);
-            const save = async () => {
-              setSaving(true); setTestResult("");
-              try {
-                await fetch(`${apiURL}/coaching/settings`,{method:"POST",headers:{"Content-Type":"application/json","x-api-secret":apiSecret},body:JSON.stringify({
-                  anthropicKey: cs.anthropicKey||undefined,
-                  email: cs.email,
-                  resendKey: cs.resendKey||undefined,
-                  ntfyTopic: cs.ntfyTopic,
-                  enabled: cs.enabled!==false,
-                })});
-                setTestResult("✓ Settings saved!");
-                setLoaded(false); // reload
-              } catch(e){ setTestResult("⚠ Save failed: "+e.message); }
-              setSaving(false);
-            };
-            const testNow = async () => {
-              setTesting(true); setTestResult("⟳ Running coaching brief... (takes ~15s)");
-              try {
-                const r = await fetch(`${apiURL}/coaching/run`,{method:"POST",headers:{"x-api-secret":apiSecret}});
-                const j = await r.json();
-                if(j.error) setTestResult("⚠ "+j.error);
-                else setTestResult("✓ Done! Check your email & ntfy app. Brief preview:\n\n"+j.brief?.slice(0,300)+"...");
-              } catch(e){ setTestResult("⚠ "+e.message); }
-              setTesting(false);
-            };
-            const isConfigured = cs.anthropicKeySet && cs.email;
-            return (
-              <div style={{...panel,marginBottom:"16px",borderColor:"#a78bfa40"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"14px",flexWrap:"wrap",gap:"8px"}}>
-                  <div>
-                    <div style={{fontSize:"13px",fontWeight:"bold",letterSpacing:"2px",color:"#a78bfa"}}>🧠 DAILY COACHING BRIEF</div>
-                    <div style={{fontSize:"11px",color:C.dim,marginTop:"3px"}}>Claude analyzes your data every morning → email + iPhone push notification</div>
-                  </div>
-                  <label style={{display:"flex",alignItems:"center",gap:"8px",cursor:"pointer"}}>
-                    <div onClick={()=>setCs(p=>({...p,enabled:!p.enabled}))} style={{width:"36px",height:"20px",borderRadius:"10px",background:cs.enabled!==false?"#a78bfa":"#333",position:"relative",transition:"background 0.2s",cursor:"pointer"}}>
-                      <div style={{position:"absolute",top:"3px",left:cs.enabled!==false?"19px":"3px",width:"14px",height:"14px",borderRadius:"50%",background:"#fff",transition:"left 0.2s"}}/>
-                    </div>
-                    <span style={{fontSize:"11px",color:C.text2}}>{cs.enabled!==false?"Enabled":"Disabled"}</span>
-                  </label>
-                </div>
-
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
-                  {/* Anthropic Key */}
-                  <div>
-                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>ANTHROPIC API KEY {cs.anthropicKeySet&&<span style={{color:"#4ade80"}}>✓ SET</span>}</div>
-                    <input type="password" placeholder={cs.anthropicKeyHint||"sk-ant-api03-..."} value={cs.anthropicKey||""}
-                      onChange={e=>setCs(p=>({...p,anthropicKey:e.target.value}))}
-                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Get at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>console.anthropic.com</a></div>
-                  </div>
-                  {/* Email */}
-                  <div>
-                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>COACHING EMAIL</div>
-                    <input type="email" placeholder="brandon@example.com" value={cs.email||""}
-                      onChange={e=>setCs(p=>({...p,email:e.target.value}))}
-                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Where to send your daily brief</div>
-                  </div>
-                  {/* Resend Key */}
-                  <div>
-                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>RESEND API KEY {cs.resendKeySet&&<span style={{color:"#4ade80"}}>✓ SET</span>} <span style={{color:C.dim}}>(free email)</span></div>
-                    <input type="password" placeholder={cs.resendKeySet?"re_...already set":"re_..."} value={cs.resendKey||""}
-                      onChange={e=>setCs(p=>({...p,resendKey:e.target.value}))}
-                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Free at <a href="https://resend.com" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>resend.com</a> — 3k emails/month free</div>
-                  </div>
-                  {/* ntfy Topic */}
-                  <div>
-                    <div style={{fontSize:"10px",color:C.text3,letterSpacing:"1px",marginBottom:"4px"}}>NTFY PUSH TOPIC <span style={{color:C.dim}}>(iPhone push)</span></div>
-                    <input type="text" placeholder="biotrack-brandon-2026" value={cs.ntfyTopic||""}
-                      onChange={e=>setCs(p=>({...p,ntfyTopic:e.target.value}))}
-                      style={{...inp,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:"9px",color:C.dim,marginTop:"3px"}}>Free at <a href="https://ntfy.sh" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>ntfy.sh</a> — install app, subscribe to this topic</div>
-                  </div>
-                </div>
-
-                <div style={{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}>
-                  <button onClick={save} disabled={saving} style={{...bFill("#a78bfa"),padding:"8px 20px",fontSize:"11px"}}>
-                    {saving?"SAVING...":"💾 SAVE SETTINGS"}
-                  </button>
-                  <button onClick={testNow} disabled={testing||!isConfigured} title={!isConfigured?"Set Anthropic key + email first":""} style={{...bOut("#a78bfa"),padding:"8px 20px",fontSize:"11px",opacity:isConfigured?1:0.4}}>
-                    {testing?"RUNNING...":"▶ TEST BRIEF NOW"}
-                  </button>
-                  <span style={{fontSize:"10px",color:C.dim}}>Runs daily at 7 AM ET · <a href="https://apps.apple.com/app/ntfy/id1625stopping" target="_blank" rel="noreferrer" style={{color:"#a78bfa"}}>Get ntfy for iPhone →</a></span>
-                </div>
-                {testResult&&(
-                  <div style={{marginTop:"12px",padding:"12px",background:C.surf2,borderRadius:"6px",fontSize:"11px",color:testResult.startsWith("✓")?C.text1:"#f87171",whiteSpace:"pre-wrap",lineHeight:"1.6"}}>
-                    {testResult}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <CoachingSettings apiURL={apiURL} apiSecret={apiSecret} panel={panel} inp={inp} bFill={bFill} bOut={bOut} />
 
           {/* Shortcut guide */}
           {sectionLabel("iOS SHORTCUT SETUP GUIDE — 5 PHASES · ~10 MINUTES")}
@@ -2765,7 +4120,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                       <div style={{fontSize:"12px",color:"#90c890",lineHeight:"2.2"}}>
                         4am · 12pm · 5pm · 11pm → Shortcut runs automatically<br/>
                         → reads all Apple Health data → copies JSON to clipboard<br/>
-                        → <span style={{color:"#a78bfa"}}>BioTrack opens automatically in Safari</span><br/>
+                        → <span style={{color:"#a78bfa"}}>BodyData opens automatically in Safari</span><br/>
                         → tap <span style={{color:"#00ff9d"}}>📋 PASTE SHORTCUT DATA</span> → paste → <span style={{color:"#00ff9d"}}>IMPORT & GO LIVE</span> ✓
                       </div>
                     </div>
@@ -2806,8 +4161,12 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       {tab==="summary" && (()=>{
         const rdDays = summaryRange==="7d"?7:summaryRange==="30d"?30:summaryRange==="90d"?90:summaryRange==="180d"?180:summaryRange==="365d"?365:99999;
         // Fall back to DEMO data when not connected (same as Dashboard)
-        const histSrc = (liveHistory && liveHistory.length > 0) ? liveHistory : DEMO;
-        const allDays2 = histSrc.map(h=>({...h,isDemo:!liveHistory?.length}));
+        const histSrc = (liveHistory && liveHistory.length > 0) ? liveHistory : (apiSecret ? [] : DEMO);
+        const nowMs = Date.now();
+        const allDays2 = histSrc
+          .map(h => ({...h, _ms: (parseSyncDateRobust(h.syncDate)||new Date(0)).getTime(), isDemo:!liveHistory?.length}))
+          .filter(h => h._ms <= nowMs)
+          .sort((a, b) => b._ms - a._ms);
         const rangeData2 = allDays2.slice(0, Math.min(rdDays, allDays2.length));
         // Use most-recent non-null value for each metric (avoids partial today data like 76 steps at 6am)
         const latestVal = (key) => rangeData2.find(d => d[key] != null && d[key] !== 0)?.[key] ?? null;
@@ -2823,8 +4182,10 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
         }).filter(m=>m.cur!=null);
 
         // Build ordered metric list — respect saved order, append any new metrics at end
+        // Always include core nutrition KPIs even when null (show "—" until food is logged)
+        const ALWAYS_SHOW = new Set(["calories","protein","carbs","fat"]);
         const orderedMetrics = (() => {
-          const hasData = SUMMARY_METRICS.filter(m => latestVal(m.key) != null);
+          const hasData = SUMMARY_METRICS.filter(m => latestVal(m.key) != null || ALWAYS_SHOW.has(m.key));
           if (!summaryOrder) return hasData;
           const saved = summaryOrder.filter(k => hasData.find(m => m.key === k));
           const unsaved = hasData.filter(m => !saved.includes(m.key)).map(m => m.key);
@@ -2858,9 +4219,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                 <span style={{fontSize:"18px",fontWeight:"bold",color:C.text1,letterSpacing:"1px"}}>📈 Summary</span>
                 {rl && <span style={{fontSize:"11px",color:C.dim,background:C.surf,padding:"4px 10px",borderRadius:"4px"}}>{rl}</span>}
               </div>
-              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
-                {summaryOrder && <button onClick={()=>{setSummaryOrder(null);localStorage.removeItem("bt_summary_order");}} style={{padding:"6px 12px",background:"transparent",border:`1px solid ${C.bord2}`,color:C.dim,cursor:"pointer",fontSize:"10px",borderRadius:"4px",letterSpacing:"0.5px"}}>↺ Reset Order</button>}
-              </div>
+              <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}></div>
               <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
                 {SUMMARY_RANGES.map(r=>(
                   <button key={r.id} onClick={()=>setSummaryRange(r.id)}
@@ -2875,7 +4234,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </div>
             </div>
             <div style={{display:"flex",flexWrap:"wrap"}}>
-              <div style={{flex:"1 1 300px",padding:"16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:"12px",alignContent:"start"}}>
+              <div style={{flex:"1 1 300px",padding:"16px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(260px,100%),1fr))",gap:"12px",alignContent:"start"}}>
                 {orderedMetrics.map((m, idx)=>{
                   const vals=rangeData2.map(d=>d[m.key]).filter(v=>typeof v==="number"&&!isNaN(v));
                   const cur=latestVal(m.key), prev=oldestVal(m.key);
@@ -2885,31 +4244,31 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                   const isBad=m.lowerBetter?(pNum!=null&&pNum>0):(pNum!=null&&pNum<0);
                   return (
                     <div key={m.key}
-                      draggable
-                      onDragStart={e=>{summaryDragRef.current=idx;e.dataTransfer.effectAllowed="move";}}
-                      onDragOver={e=>handleDragOver(e,idx)}
-                      onDrop={e=>handleDrop(e,idx)}
-                      onDragEnd={handleDragEnd}
-                      onClick={()=>{ if(summaryDragRef.current==null) setDrillMetric(m); }}
-                      style={{background:C.surf,border:`1px solid ${C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px",cursor:"pointer",userSelect:"none",transition:"opacity 0.15s,box-shadow 0.15s"}}
-                      onMouseEnter={e=>{e.currentTarget.style.boxShadow=`0 0 0 2px ${m.col}66`;}}
+                      draggable={summaryEdit}
+                      onDragStart={summaryEdit?e=>{summaryDragRef.current=idx;e.dataTransfer.effectAllowed="move";}:undefined}
+                      onDragOver={summaryEdit?e=>handleDragOver(e,idx):undefined}
+                      onDrop={summaryEdit?e=>handleDrop(e,idx):undefined}
+                      onDragEnd={summaryEdit?handleDragEnd:undefined}
+                      onClick={()=>{ if(!summaryEdit&&summaryDragRef.current==null) setDrillMetric(m); }}
+                      style={{background:C.surf,border:`1px solid ${summaryEdit?C.bord2:C.bord}`,borderRadius:"10px",padding:"18px 20px",display:"flex",flexDirection:"column",gap:"6px",cursor:summaryEdit?"grab":"pointer",userSelect:"none",transition:"opacity 0.15s,box-shadow 0.15s"}}
+                      onMouseEnter={e=>{e.currentTarget.style.boxShadow=summaryEdit?`0 0 0 2px #00ff9d44`:`0 0 0 2px ${m.col}66`;}}
                       onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";}}
                     >
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <div style={{fontSize:"11px",color:C.text3,letterSpacing:"1.5px",fontWeight:"600"}}>{m.label.toUpperCase()}</div>
-                        <span style={{fontSize:"10px",color:m.col,opacity:0.5,letterSpacing:"0.5px"}}>↗ details</span>
+                        {summaryEdit
+                          ? <span style={{fontSize:"14px",color:C.dim,letterSpacing:"2px",cursor:"grab"}}>⠿</span>
+                          : pNum!=null
+                            ? <div style={{display:"flex",alignItems:"center",gap:"3px",background:isGood?"#4ade8020":isBad?"#f8717120":"#ffffff10",border:`1px solid ${isGood?"#4ade8040":isBad?"#f8717140":"#ffffff15"}`,borderRadius:"6px",padding:"3px 8px"}}>
+                                <span style={{fontSize:"11px"}}>{isGood?"↑":isBad?"↓":"→"}</span>
+                                <span style={{fontSize:"11px",fontWeight:"bold",color:isGood?"#4ade80":isBad?"#f87171":C.text3}}>{Math.abs(pNum)}%</span>
+                              </div>
+                            : null
+                        }
                       </div>
-                      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:"8px"}}>
-                        <div>
-                          <div style={{fontSize:"26px",fontWeight:"bold",color:C.text1,lineHeight:"1.1",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,m.unit)}</div>
-                          {prev!=null&&cur!=null&&<div style={{fontSize:"11px",color:C.text2,marginTop:"3px"}}>from {summaryFmtVal(prev,m.unit)}</div>}
-                        </div>
-                        {pNum!=null&&(
-                          <div style={{display:"flex",alignItems:"center",gap:"4px",background:isGood?"#4ade8020":isBad?"#f8717120":"#ffffff10",border:`1px solid ${isGood?"#4ade8040":isBad?"#f8717140":"#ffffff15"}`,borderRadius:"6px",padding:"4px 10px",flexShrink:0}}>
-                            <span style={{fontSize:"13px"}}>{isGood?"↑":isBad?"↓":"→"}</span>
-                            <span style={{fontSize:"12px",fontWeight:"bold",color:isGood?"#4ade80":isBad?"#f87171":C.text3}}>{Math.abs(pNum)}%</span>
-                          </div>
-                        )}
+                      <div>
+                        <div style={{fontSize:"26px",fontWeight:"bold",color:C.text1,lineHeight:"1.1",fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(cur,m.unit)}</div>
+                        {prev!=null&&cur!=null&&<div style={{fontSize:"11px",color:C.text2,marginTop:"3px"}}>from {summaryFmtVal(prev,m.unit)}</div>}
                       </div>
                       <div style={{marginTop:"6px"}}>{summarySparkline(vals,m.col,48,240)}</div>
                     </div>
@@ -2924,15 +4283,11 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     const isGood=m.lowerBetter?(pNum!=null&&pNum<0):(pNum!=null&&pNum>0);
                     const isBad=m.lowerBetter?(pNum!=null&&pNum>0):(pNum!=null&&pNum<0);
                     return (
-                      <div key={m.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.bord}`}}>
-                        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-                          <div style={{width:"7px",height:"7px",borderRadius:"50%",background:m.col,flexShrink:0}}/>
-                          <span style={{fontSize:"12px",color:C.text2}}>{m.label}</span>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                          <span style={{fontSize:"12px",fontWeight:"600",color:C.text1,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(m.cur,m.unit)}</span>
-                          {pNum!=null&&<span style={{fontSize:"10px",color:isGood?"#4ade80":isBad?"#f87171":C.dim}}>{pNum>0?"+":""}{pNum}%</span>}
-                        </div>
+                      <div key={m.key} style={{display:"flex",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.bord}`,gap:"8px"}}>
+                        <div style={{width:"7px",height:"7px",borderRadius:"50%",background:m.col,flexShrink:0}}/>
+                        <span style={{fontSize:"12px",color:C.text2,minWidth:"90px"}}>{m.label}</span>
+                        <span style={{fontSize:"12px",fontWeight:"600",color:C.text1,fontFamily:"'Courier New',monospace"}}>{summaryFmtVal(m.cur,m.unit)}</span>
+                        {pNum!=null&&<span style={{fontSize:"10px",color:isGood?"#4ade80":isBad?"#f87171":C.dim}}>{pNum>0?"+":""}{pNum}%</span>}
                       </div>
                     );
                   })}
@@ -2943,8 +4298,8 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     const pNum=parseFloat(m.p);
                     const isGood=m.lowerBetter?pNum<0:pNum>0;
                     return (
-                      <div key={m.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.bord}`}}>
-                        <span style={{fontSize:"11px",color:C.text2}}>{m.label}</span>
+                      <div key={m.key} style={{display:"flex",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.bord}`,gap:"8px"}}>
+                        <span style={{fontSize:"11px",color:C.text2,minWidth:"90px"}}>{m.label}</span>
                         <span style={{fontSize:"11px",fontWeight:"bold",color:isGood?"#4ade80":"#f87171"}}>{pNum>0?"+":""}{pNum}%</span>
                       </div>
                     );
@@ -3073,15 +4428,34 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     </tr>
                     {expanded[g.id] && g.rows.map(row=>{
                       const vals=cols.map(c=>c.data[row.k]);
-                      const nums=vals.filter(v=>typeof v==="number");
+
+                      // Body comp carry-forward suppression:
+                      // A daily sync used to send the most-recent HealthKit reading regardless of
+                      // when it was taken, filling every day with stale data. Suppress a value when:
+                      //   (a) bodyCompMeasuredDate exists and doesn't match this column's date, OR
+                      //   (b) no bodyCompMeasuredDate (old data) and the value is identical to the
+                      //       next (older) column — indicating the iOS app carried it forward.
+                      const displayVals = g.id === "body" ? vals.map((v, ci) => {
+                        if (typeof v !== "number") return v;
+                        const col = cols[ci];
+                        const measuredDate = col.data?.bodyCompMeasuredDate;
+                        if (measuredDate) {
+                          return measuredDate === col.dateKey ? v : undefined;
+                        }
+                        // Historical heuristic: same value as older day = likely carry-forward
+                        const olderVal = vals[ci + 1];
+                        return (typeof olderVal === "number" && v === olderVal) ? undefined : v;
+                      }) : vals;
+
+                      const nums=displayVals.filter(v=>typeof v==="number");
                       const trend=nums.length>=2?(nums[0]>nums[nums.length-1]?"↑":nums[0]<nums[nums.length-1]?"↓":"—"):"—";
                       const lowerIsBetter = row.fat || row.lib;
                       const trendGood = lowerIsBetter ? trend==="↓" : trend==="↑";
 
                       // % change: each col vs the next col (current vs prior period)
-                      const pctChanges = vals.map((v,ci)=>{
+                      const pctChanges = displayVals.map((v,ci)=>{
                         if(typeof v!=="number") return null;
-                        const prev = vals[ci+1];
+                        const prev = displayVals[ci+1];
                         if(typeof prev!=="number"||prev===0) return null;
                         return ((v - prev) / Math.abs(prev)) * 100;
                       });
@@ -3108,7 +4482,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                           <td style={{padding:"6px 6px 6px 12px",textAlign:"left",color:C.text1,fontSize:"14px",position:"sticky",left:0,background:row.hi?"#0e0e1e":C.bg,zIndex:1,whiteSpace:"nowrap",fontWeight:row.hi?"600":"normal"}}>
                             {row.l}{row.u&&<span style={{color:C.text1,marginLeft:"4px",fontWeight:"normal",opacity:0.7}}>{row.u}</span>}
                           </td>
-                          {vals.map((v,ci)=>{
+                          {displayVals.map((v,ci)=>{
                             // Workout type cell — show vol% and dur% vs last same workout
                             if(row.k === "workoutType") {
                               const cmp = workoutComparisons?.[ci];
@@ -3449,6 +4823,14 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       })()}
 
       {/* ══════════ AI COACH TAB ══════════ */}
+      {tab==="ask" && <AskAI apiURL={apiURL} apiSecret={apiSecret} onSections={loadSections}/>}
+      {tab==="metrics" && <MetricsExplorer allData={liveHistory.length>0?liveHistory:liveData?[liveData]:(apiSecret?[]:DEMO)} sections={kpiSections}/>}
+      <ConsentGate apiURL={apiURL} apiSecret={apiSecret}/>
+      {tab==="profile" && <><ProfilePanel apiURL={apiURL} apiSecret={apiSecret} onSaved={loadProfile}/>{isOwner&&<BetaAccessCard apiURL={apiURL} apiSecret={apiSecret}/>}<AccountCard apiURL={apiURL} apiSecret={apiSecret}/></>}
+      {tab==="feedback" && <FeedbackPanel apiURL={apiURL} apiSecret={apiSecret}/>}
+      {tab==="benchmarks" && <Benchmarks days={benchDays} sections={kpiSections} profile={benchProfile} optIn={benchOptIn} onProfile={saveBench}/>}
+      {tab==="automations" && <Automations apiURL={apiURL} apiSecret={apiSecret} sections={kpiSections} onSections={loadSections} onData={()=>fetchFromAPI(apiURL,apiSecret)}/>}
+
       {tab==="coach" && (() => {
         const activeCoachObj = COACHES.find(c=>c.id===activeCoach) || COACHES[0];
         const activeLLM = coachLLMs[activeCoachObj.id] || "claude";
@@ -3541,7 +4923,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               {/* iOS sync status */}
               <div style={{fontSize:"11px",color:C.dim,display:"flex",alignItems:"center",gap:"6px"}}>
                 <span style={{width:"7px",height:"7px",borderRadius:"50%",background:liveData?"#4ade80":"#666",display:"inline-block"}}/>
-                {liveData ? <span style={{color:"#4ade80"}}>iOS syncing</span> : <span>iOS app not syncing — <a href="https://github.com/goforgoldipo/BioTrackHealth" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>set up →</a></span>}
+                {liveData ? <span style={{color:"#4ade80"}}>iOS syncing</span> : <span>iOS app not syncing — <a href="https://github.com/goforgoldipo/BodyDataHealth" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>set up →</a></span>}
               </div>
             </div>
             {autoBrief && claudeKey && <span style={{fontSize:"10px",color:C.dim}}>Today's brief auto-generates when you open this tab</span>}
@@ -3554,17 +4936,37 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             const isWaiting=chatLoading[threadKey];
             const showPromptEditor=loading["_showPrompt_"+activeCoachObj.id];
             return (
-            <div style={{...panel,borderColor:activeCoachObj.col+"40",display:"flex",flexDirection:"column",gap:0}}>
+            <>
+            {chatFullscreen && <div onClick={()=>setChatFullscreen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:499}}/>}
+            <div style={{
+              ...(chatFullscreen
+                ? {position:"fixed",top:"16px",left:"16px",right:"16px",bottom:"16px",zIndex:500,
+                   background:C.surf,border:`1px solid ${activeCoachObj.col}40`,borderRadius:"10px",
+                   padding:"16px",display:"flex",flexDirection:"column",gap:0,overflow:"hidden"}
+                : {...panel,borderColor:activeCoachObj.col+"40",display:"flex",flexDirection:"column",gap:0})
+            }}>
 
               {/* Header: data status */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"8px",borderBottom:`1px solid ${activeCoachObj.col}25`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px",paddingBottom:"8px",borderBottom:`1px solid ${activeCoachObj.col}25`,flexShrink:0}}>
                 <div style={{fontSize:"10px",color:liveData?"#4ade80":C.dim,display:"flex",alignItems:"center",gap:"8px"}}>
                   <span>{liveData?"✓ Live data loaded":"Demo data"} · {todayDateKey}</span>
                   <span style={{color:C.bord2}}>|</span>
                   <span style={{color:C.text3}}>30-day context active</span>
                 </div>
-                <div style={{fontSize:"10px",color:C.dim,fontFamily:"'Courier New',monospace"}}>
-                  {thread.length > 0 ? `${thread.filter(m=>m.role==="assistant").length} response${thread.filter(m=>m.role==="assistant").length!==1?"s":""}` : ""}
+                <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                  <div style={{fontSize:"10px",color:C.dim,fontFamily:"'Courier New',monospace"}}>
+                    {thread.length > 0 ? `${thread.filter(m=>m.role==="assistant").length} response${thread.filter(m=>m.role==="assistant").length!==1?"s":""}` : ""}
+                  </div>
+                  <button onClick={()=>setChatFullscreen(v=>!v)}
+                    title={chatFullscreen?"Exit fullscreen":"Expand chat"}
+                    style={{background:"none",border:`1px solid ${C.bord2}`,borderRadius:"6px",
+                      color:chatFullscreen?activeCoachObj.col:C.text3,cursor:"pointer",
+                      padding:"4px 8px",fontSize:"14px",lineHeight:1,
+                      transition:"color 0.15s,border-color 0.15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=activeCoachObj.col;e.currentTarget.style.color=activeCoachObj.col;}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=C.bord2;e.currentTarget.style.color=chatFullscreen?activeCoachObj.col:C.text3;}}>
+                    {chatFullscreen ? "⊡" : "⛶"}
+                  </button>
                 </div>
               </div>
 
@@ -3609,7 +5011,10 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               {/* Chat thread — primary UI */}
               <div ref={chatScrollRef} style={{
                 display:"flex",flexDirection:"column",gap:"10px",
-                minHeight:"280px",maxHeight:"560px",overflowY:"auto",
+                minHeight:"280px",
+                maxHeight:chatFullscreen?"calc(100vh - 280px)":"560px",
+                flex:chatFullscreen?"1":"unset",
+                overflowY:"auto",
                 marginBottom:"12px",paddingRight:"2px",
               }}>
                 {thread.length===0 && !isWaiting ? (
@@ -3849,6 +5254,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
               </div>
 
             </div>
+            </>
             );
           })()}
 
@@ -4249,6 +5655,9 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
         </div>
       )}
 
+      {/* ══════════ MEALS TAB ══════════ */}
+      {tab==="meals" && <MealPlanner />}
+
       {/* ══════════ PHOTOS TAB ══════════ */}
       {tab==="photos" && (
         <div style={{padding:"16px",maxWidth:"900px",margin:"0 auto"}}>
@@ -4339,57 +5748,37 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
                     </div>
                   );
                 })}
-                <div style={{width:"100%",fontSize:"11px",color:"#4ade80",marginTop:"4px"}}>✓ Values auto-filled below — tap SAVE MEASUREMENTS to confirm</div>
+                <div style={{width:"100%",fontSize:"11px",color:"#4ade80",marginTop:"4px"}}>✓ Values filled in below. Check them, then tap Save.</div>
               </div>
             )}
           </div>
 
-          {sectionLabel("MANUAL DATA ENTRY — OVERRIDES SENSOR DATA IN AI CONTEXT")}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:"14px",marginBottom:"16px"}}>
-            {GROUPS.map(g=>(
-              <div key={g.id} style={{...panel,margin:0,borderColor:g.col+"40"}}>
-                <div style={{fontSize:"11px",letterSpacing:"2px",color:g.col,marginBottom:"14px",fontWeight:"bold"}}>{g.name}</div>
-                {g.rows.filter(r=>r.k!=="workoutType").map(r=>(
-                  <div key={r.k} style={{marginBottom:"10px"}}>
-                    <label style={{fontSize:"11px",color:C.text2,letterSpacing:"0.5px",display:"block",marginBottom:"4px",fontWeight:"600"}}>
-                      {r.l}{r.u&&<span style={{color:C.text3,marginLeft:"4px",fontWeight:"normal"}}>({r.u})</span>}
-                    </label>
-                    {r.type==="time" ? (
-                      <input type="time"
-                        value={manualDraft[r.k]||today[r.k]||""}
-                        onChange={e=>setManualDraft(p=>({...p,[r.k]:e.target.value||""}))}
-                        style={{...inp,width:"100%",boxSizing:"border-box",colorScheme:"dark"}}/>
-                    ) : (
-                      <input type="number" placeholder={String(today[r.k]||"")}
-                        value={manualDraft[r.k]||""}
-                        onChange={e=>setManualDraft(p=>({...p,[r.k]:parseFloat(e.target.value)||""}))}
-                        style={{...inp,width:"100%",boxSizing:"border-box"}}/>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:"10px",marginBottom:"16px"}}>
-            <button onClick={()=>{setManual(p=>({...p,...manualDraft}));setManualDraft({});}} style={bFill("#00ff9d")}>💾 SAVE MEASUREMENTS</button>
-            <button onClick={()=>setManualDraft({})} style={bOut(C.text3)}>CLEAR</button>
-          </div>
-          {Object.keys(manual).length>0 && (
-            <div style={{...panel,borderColor:"#00ff9d30"}}>
-              {sectionLabel("SAVED VALUES — ACTIVE IN AI CONTEXT:")}
-              <div style={{display:"flex",flexWrap:"wrap",gap:"20px"}}>
-                {Object.entries(manual).map(([k,v])=>{
-                  const field=GROUPS.flatMap(g=>g.rows).find(r=>r.k===k);
-                  return (
-                    <div key={k} style={{textAlign:"center"}}>
-                      <div style={{fontSize:"18px",color:"#00ff9d",fontWeight:"bold"}}>{v}{field?.u||""}</div>
-                      <div style={{fontSize:"10px",color:C.text3,marginTop:"2px",letterSpacing:"1px"}}>{field?.l||k}</div>
-                    </div>
-                  );
-                })}
-              </div>
+          <ManualUpload apiURL={apiURL} apiSecret={apiSecret} prefill={manualDraft} history={liveHistory}
+            onSaved={()=>{setManualDraft({});fetchFromAPI(apiURL,apiSecret);}}/>
+        </div>
+      )}
+
+        </div>{/* end content scroll */}
+      </div>{/* end main content */}
+
+      {drag&&kpiBoard?.byId[drag.id]&&(
+        <div style={{position:"fixed",left:drag.x-drag.offX,top:drag.y-drag.offY,width:drag.w,zIndex:3000,pointerEvents:"none",
+          transform:"scale(1.03) rotate(-1deg)",boxShadow:"0 20px 45px rgba(43,46,74,.22)",borderRadius:"14px",display:"flex"}}>
+          <BtKpiCard c={kpiBoard.byId[drag.id]} cmpLbl={kr.cmpLbl} onOpen={()=>{}}/>
+        </div>)}
+      {/* ── ACCESS KEY GATE: the API password is never shipped in the site's code */}
+      {(!apiSecret || apiStatus==="error" && /secret/i.test(apiError||"")) && (
+        <div style={{position:"fixed",inset:0,background:"rgba(43,46,74,.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:"16px"}}>
+          <form onSubmit={e=>{e.preventDefault();const v=unlockDraft.trim();if(!v)return;localStorage.setItem("bt_api_secret",v);setApiSecret(v);setUnlockDraft("");fetchFromAPI(apiURL,v);}}
+            style={{background:"#fff",borderRadius:"14px",padding:"24px",width:"380px",maxWidth:"100%",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+            <div style={{fontFamily:"'Inter',system-ui,sans-serif",fontSize:"18px",fontWeight:700,color:C.text1}}>Unlock BodyData</div>
+            <div style={{fontSize:"13px",color:C.text3,margin:"4px 0 16px",lineHeight:1.5}}>
+              {apiSecret?"That access key was rejected. Paste your current key.":"Paste your BodyData access key. It's saved in this browser only."}
             </div>
-          )}
+            <input type="password" autoFocus value={unlockDraft} onChange={e=>setUnlockDraft(e.target.value)} placeholder="Access key"
+              style={{width:"100%",boxSizing:"border-box",height:"40px",border:`1px solid ${C.bord}`,borderRadius:"9px",padding:"0 12px",font:"inherit",color:C.text1}}/>
+            <button type="submit" className="bt-btn" style={{marginTop:"12px",width:"100%",height:"40px",background:C.teal,borderColor:C.teal,color:"#fff"}}>Unlock</button>
+          </form>
         </div>
       )}
 
@@ -4436,6 +5825,79 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           </div>
         );
       })()}
+
+      {/* ── Floating AI Chat Bubble ── */}
+      <div style={{position:"fixed",bottom:"24px",right:"24px",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:"12px"}}>
+        {floatOpen && (
+          <div style={{width:"380px",height:"560px",background:"#0d0d1a",border:"1px solid #00ff9d40",borderRadius:"16px",boxShadow:"0 20px 60px rgba(0,0,0,0.8)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            {/* Header */}
+            <div style={{padding:"14px 16px",background:"#0a0a15",borderBottom:"1px solid #1a1a2e",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <div style={{width:"32px",height:"32px",borderRadius:"50%",background:"linear-gradient(135deg,#5468FF,#6C5CFF)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px"}}>🧠</div>
+                <div>
+                  <div style={{fontSize:"13px",fontWeight:"bold",color:"#fff"}}>BodyData AI</div>
+                  <div style={{fontSize:"10px",color:"#4ade80"}}>{claudeKey?"● Connected · All data loaded":"○ Add API key in AI Coach tab"}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                {floatThread.length>0&&<button onClick={()=>setFloatThread([])} style={{background:"transparent",border:"none",color:"#555",cursor:"pointer",fontSize:"11px",padding:"4px 6px"}}>Clear</button>}
+                <button onClick={()=>setFloatOpen(false)} style={{background:"transparent",border:"none",color:"#888",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"2px 6px"}}>×</button>
+              </div>
+            </div>
+            {/* Messages */}
+            <div ref={floatScrollRef} style={{flex:1,overflowY:"auto",padding:"14px",display:"flex",flexDirection:"column",gap:"10px"}}>
+              {floatThread.length===0&&(
+                <div style={{textAlign:"center",padding:"30px 16px"}}>
+                  <div style={{fontSize:"28px",marginBottom:"10px"}}>🧠</div>
+                  <div style={{fontSize:"13px",color:"#ccc",marginBottom:"6px",fontWeight:"600"}}>Ask me anything about your health</div>
+                  <div style={{fontSize:"11px",color:"#555",lineHeight:"1.5"}}>I have your weight, body fat, sleep, HRV, nutrition, workouts and more. Try:</div>
+                  <div style={{marginTop:"14px",display:"flex",flexDirection:"column",gap:"6px"}}>
+                    {["How is my sleep trending?","What should I eat today?","Am I overtraining?","How close am I to 10% body fat?"].map(q=>(
+                      <button key={q} onClick={()=>sendFloatChat(q)} style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:"8px",color:"#aaa",fontSize:"11px",padding:"8px 12px",cursor:"pointer",textAlign:"left"}}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {floatThread.map((m,i)=>(
+                <div key={i} style={{display:"flex",flexDirection:"column",alignItems:m.role==="user"?"flex-end":"flex-start"}}>
+                  <div style={{maxWidth:"88%",padding:"10px 13px",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:m.role==="user"?"#00ff9d20":"#1a1a2e",border:`1px solid ${m.role==="user"?"#00ff9d40":"#2a2a4a"}`,color:m.role==="user"?"#e0ffe0":"#ddd",fontSize:"12px",lineHeight:"1.55",whiteSpace:"pre-wrap"}}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {(floatLoading||floatStream)&&(
+                <div style={{display:"flex",alignItems:"flex-start"}}>
+                  <div style={{maxWidth:"88%",padding:"10px 13px",borderRadius:"14px 14px 14px 4px",background:"#1a1a2e",border:"1px solid #2a2a4a",color:"#ddd",fontSize:"12px",lineHeight:"1.55",whiteSpace:"pre-wrap"}}>
+                    {floatStream||<span style={{animation:"pulse 1.2s ease infinite",display:"inline-block"}}>●●●</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Input */}
+            <div style={{padding:"12px",borderTop:"1px solid #1a1a2e",flexShrink:0,display:"flex",gap:"8px",alignItems:"flex-end"}}>
+              <textarea
+                value={floatDraft}
+                onChange={e=>setFloatDraft(e.target.value)}
+                onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendFloatChat();}}}
+                placeholder="Ask anything… (Enter to send)"
+                rows={2}
+                style={{flex:1,background:"#12121f",border:"1px solid #2a2a4a",borderRadius:"10px",color:"#fff",fontSize:"12px",padding:"10px 12px",resize:"none",outline:"none",fontFamily:"inherit",lineHeight:"1.4"}}
+              />
+              <button onClick={()=>sendFloatChat()} disabled={floatLoading||!floatDraft.trim()}
+                style={{width:"38px",height:"38px",borderRadius:"50%",background:floatDraft.trim()&&!floatLoading?"#00ff9d":"#1a1a2e",border:"none",cursor:floatDraft.trim()&&!floatLoading?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"16px",flexShrink:0,transition:"background 0.2s"}}>
+                ↑
+              </button>
+            </div>
+          </div>
+        )}
+        {/* Toggle button */}
+        <button onClick={()=>setFloatOpen(o=>!o)}
+          style={{width:"56px",height:"56px",borderRadius:"50%",background:floatOpen?"#2B2E4A":"linear-gradient(135deg,#5468FF,#6C5CFF)",border:floatOpen?"2px solid #5468FF40":"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"24px",boxShadow:"0 4px 20px rgba(84,104,255,.35)",transition:"all 0.2s"}}>
+          {floatOpen?"×":"🧠"}
+        </button>
+      </div>
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}} * { box-sizing: border-box; }`}</style>
     </div>

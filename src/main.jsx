@@ -1,89 +1,88 @@
-import React, { useState } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ClerkProvider, SignIn, SignUp, useAuth } from "@clerk/clerk-react";
 
-// ── Change this to whatever password you want ──────────────────────────────
-const APP_PASSWORD = "lambo";
-const SESSION_KEY  = "bt_auth";
+import App          from "./App.jsx";
+import OnboardingPage from "./pages/OnboardingPage.jsx";
+import Site from "./pages/site/Site.jsx";
+import { initAnalytics } from "./analytics.js";
 
-function PasswordGate({ children }) {
-  const [unlocked, setUnlocked] = useState(
-    () => sessionStorage.getItem(SESSION_KEY) === "1"
+initAnalytics();
+
+const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const CLERK_VALID = CLERK_KEY && !CLERK_KEY.includes("REPLACE_WITH");
+
+function ProtectedRoute({ children }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  if (!isLoaded) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#F8F8F7"}}>
+      <div style={{width:"32px",height:"32px",border:"3px solid #E6E4E0",borderTopColor:"#0C464B",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
   );
-  const [input, setInput]   = useState("");
-  const [shake, setShake]   = useState(false);
+  if (!isSignedIn) return <Navigate to="/" replace/>;
+  return children;
+}
 
-  if (unlocked) return children;
+function ProtectedRouteDev({ children }) {
+  return children;
+}
 
-  const attempt = () => {
-    if (input === APP_PASSWORD) {
-      sessionStorage.setItem(SESSION_KEY, "1");
-      setUnlocked(true);
-    } else {
-      setShake(true);
-      setInput("");
-      setTimeout(() => setShake(false), 600);
-    }
-  };
+// Clerk auth pages styled to match the light theme
+const authAppearance = {
+  variables: {
+    colorPrimary: "#0C464B",
+    colorBackground: "#F8F8F7",
+    colorInputBackground: "#FFFFFF",
+    colorText: "#1C1A17",
+    borderRadius: "10px",
+    fontFamily: "'Inter', system-ui, sans-serif",
+  },
+  elements: {
+    card: { boxShadow: "0 4px 24px rgba(28,26,23,.08)", border: "1px solid #E6E4E0" },
+    headerTitle: { fontFamily: "'Archivo', sans-serif", fontWeight: 700 },
+  }
+};
 
+function AuthPage({ mode }) {
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", minHeight: "100vh",
-      background: "#050509", fontFamily: "system-ui, sans-serif",
-    }}>
-      <div style={{
-        background: "#0e0e18", border: "1px solid #1e1e2e",
-        borderRadius: 16, padding: "40px 48px", textAlign: "center",
-        width: 320, animation: shake ? "shake 0.5s ease" : "none",
-      }}>
-        <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
-        <div style={{ color: "#f0f0f0", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
-          BioTrack
-        </div>
-        <div style={{ color: "#707070", fontSize: 13, marginBottom: 28 }}>
-          Enter password to continue
-        </div>
-        <input
-          autoFocus
-          type="password"
-          value={input}
-          placeholder="Password"
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && attempt()}
-          style={{
-            width: "100%", padding: "10px 14px", borderRadius: 8,
-            border: "1px solid #2a2a3e", background: "#12121e",
-            color: "#f0f0f0", fontSize: 15, outline: "none",
-            boxSizing: "border-box", marginBottom: 14,
-          }}
-        />
-        <button
-          onClick={attempt}
-          style={{
-            width: "100%", padding: "10px 0", borderRadius: 8,
-            background: "#6c63ff", color: "#fff", fontWeight: 600,
-            fontSize: 15, border: "none", cursor: "pointer",
-          }}
-        >
-          Unlock
-        </button>
-      </div>
-      <style>{`
-        @keyframes shake {
-          0%,100%{transform:translateX(0)}
-          20%,60%{transform:translateX(-8px)}
-          40%,80%{transform:translateX(8px)}
-        }
-      `}</style>
+    <div style={{minHeight:"100vh",background:"#F8F8F7",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+      {mode === "sign-in"
+        ? <SignIn appearance={authAppearance} routing="path" path="/sign-in" signUpUrl="/sign-up" afterSignInUrl="/dashboard"/>
+        : <SignUp appearance={authAppearance} routing="path" path="/sign-up" signInUrl="/sign-in" afterSignUpUrl="/onboarding"/>
+      }
     </div>
   );
 }
 
+const PR = CLERK_VALID ? ProtectedRoute : ProtectedRouteDev;
+
+const AppTree = () => (
+  <BrowserRouter>
+    <Routes>
+      <Route path="/"             element={<Site page="home"/>}/>
+      <Route path="/features"     element={<Site page="features"/>}/>
+      <Route path="/pricing"      element={<Site page="pricing"/>}/>
+      <Route path="/integrations" element={<Site page="integrations"/>}/>
+      <Route path="/security"     element={<Site page="security"/>}/>
+      <Route path="/privacy"      element={<Site page="privacy"/>}/>
+      <Route path="/terms"        element={<Site page="terms"/>}/>
+      <Route path="/app"          element={<Navigate to="/dashboard" replace/>}/>
+      <Route path="/sign-in/*"  element={CLERK_VALID ? <AuthPage mode="sign-in"/> : <Navigate to="/dashboard" replace/>}/>
+      <Route path="/sign-up/*"  element={CLERK_VALID ? <AuthPage mode="sign-up"/> : <Navigate to="/dashboard" replace/>}/>
+      <Route path="/onboarding" element={<PR><OnboardingPage/></PR>}/>
+      <Route path="/dashboard"  element={<PR><App/></PR>}/>
+      <Route path="*"           element={<Navigate to="/" replace/>}/>
+    </Routes>
+  </BrowserRouter>
+);
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <PasswordGate>
-      <App />
-    </PasswordGate>
+    {CLERK_VALID
+      ? <ClerkProvider publishableKey={CLERK_KEY}><AppTree/></ClerkProvider>
+      : <AppTree/>
+    }
   </React.StrictMode>
 );
