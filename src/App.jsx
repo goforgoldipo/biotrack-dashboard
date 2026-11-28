@@ -3,6 +3,7 @@ import MealPlanner from "./MealPlanner.jsx";
 import { WD, dayIndex, resolveRange, mxBuckets, metricDetail, GROUPS, parseSyncDateRobust, mapImport, MON, ymdOf, todayYmd, addDay, mStart, mEnd, shiftM, daysIncl, dayList, shortDay, fmtDate, DK_PRESETS, dkRange, dkLabel, fmtSpan, SUMMARY_RANGES, SUMMARY_METRICS, GROUP_DESC, SRC_NAME, KPI_TEXT_KEYS, KPI_LAST_GROUPS, KPI_LAST_KEYS, KPI_SUM_RE, kpiMode, aggVals, btFmt, dayKey, appName, HK_SECTIONS, HK_LOWER, HK_NEUTRAL, HKC_HIGHER, HKC_NEUTRAL, hkDirection, hkUnit, hkLabel, hkGroups, SEC_SRC, buildKpiBoard, COMPARABLE, sourceCompare } from "./shared/kpi.js";
 import Benchmarks from "./Benchmarks.jsx";
 import { ProfilePanel, FeedbackPanel, GoalCard, ConsentGate, AccountCard, BetaAccessCard } from "./ProfileFeedback.jsx";
+import { MeasurementsPanel } from "./Measurements.jsx";
 import { screen as trackScreen } from "./analytics.js";
 import { BENCH_REF } from "./shared/benchRef.js";
 import { marked } from "marked";
@@ -3744,6 +3745,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
           {[
             {id:"metrics",  label:"Metrics"},
             {id:"ask",      label:"Ask AI"},
+            {id:"measurements",label:"Measurements"},
             {id:"automations",label:"Automations"},
             ...(Object.keys(BENCH_REF).length?[{id:"benchmarks",label:"Benchmarks"}]:[]),
             {id:"profile",  label:"Profile & goal"},
@@ -3789,7 +3791,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
             </div>
             <div style={{fontFamily:"'Inter',system-ui,sans-serif",fontWeight:"700",fontSize:"20px",lineHeight:1.2,color:C.text1}}>
               {tab==="kpis"?"All Health KPIs"
-                :tab==="ask"?"Ask AI":tab==="metrics"?"Metrics":tab==="automations"?"Automations":tab==="benchmarks"?"Benchmarks":tab==="profile"?"Profile & goal":tab==="feedback"?"Feedback":tab==="coach"?"AI Coach":tab==="meals"?"Meal Planner":tab==="habits"?"Habits"
+                :tab==="ask"?"Ask AI":tab==="metrics"?"Metrics":tab==="automations"?"Automations":tab==="benchmarks"?"Benchmarks":tab==="profile"?"Profile & goal":tab==="measurements"?"Measurements":tab==="feedback"?"Feedback":tab==="coach"?"AI Coach":tab==="meals"?"Meal Planner":tab==="habits"?"Habits"
                 :tab==="log"?"Log":tab==="workout"?"Workout":tab==="notes"?"Notes"
                 :tab==="photos"?"Photos":tab==="manual"?"Manual Entry":tab==="sync"?"Sync & Connect"
                 :tab==="summary"?"Summary":"Dashboard"}
@@ -4828,6 +4830,7 @@ If a screenshot shows Fat Percentage, fill the fat fields. If it shows Muscle Ma
       <ConsentGate apiURL={apiURL} apiSecret={apiSecret}/>
       {tab==="profile" && <><ProfilePanel apiURL={apiURL} apiSecret={apiSecret} onSaved={loadProfile}/>{isOwner&&<BetaAccessCard apiURL={apiURL} apiSecret={apiSecret}/>}<AccountCard apiURL={apiURL} apiSecret={apiSecret}/></>}
       {tab==="feedback" && <FeedbackPanel apiURL={apiURL} apiSecret={apiSecret}/>}
+      {tab==="measurements" && <MeasurementsPanel apiURL={apiURL} apiSecret={apiSecret} onSaved={()=>fetchFromAPI(apiURL,apiSecret)}/>}
       {tab==="benchmarks" && <Benchmarks days={benchDays} sections={kpiSections} profile={benchProfile} optIn={benchOptIn} onProfile={saveBench}/>}
       {tab==="automations" && <Automations apiURL={apiURL} apiSecret={apiSecret} sections={kpiSections} onSections={loadSections} onData={()=>fetchFromAPI(apiURL,apiSecret)}/>}
 
